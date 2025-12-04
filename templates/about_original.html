@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>프로젝트 소개 - AI 뉴스 플랫폼</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #020205;
+            --text-main: #ffffff;
+            --text-muted: #888888;
+            --accent-cyan: #4cc9f0;
+            --accent-gold: #ff9e00;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+        
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif; /* 한글 폰트 추가 고려 가능 */
+            overflow-x: hidden;
+            min-height: 100vh;
+        }
+        
+        /* Background Blobs */
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            z-index: -1;
+            opacity: 0.4;
+            animation: float 10s infinite ease-in-out;
+        }
+        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: var(--accent-cyan); }
+        .blob-2 { bottom: -10%; right: -10%; width: 600px; height: 600px; background: purple; animation-delay: -5s; }
+        
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, 50px); }
+        }
+
+        header {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--glass-border);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .logo { font-size: 1.5rem; font-weight: 700; color: var(--text-main); text-decoration: none; }
+        .logo span { color: var(--accent-cyan); }
+        
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            margin-left: 20px;
+            transition: 0.3s;
+        }
+        .nav-link:hover { color: var(--accent-cyan); }
+
+        main {
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 0 20px;
+        }
+
+        h1 { font-size: 3rem; margin-bottom: 10px; background: linear-gradient(to right, #fff, #888); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        .section-card {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+        
+        h2 { color: var(--accent-cyan); margin-top: 0; }
+        h3 { color: var(--accent-gold); margin-top: 20px; font-size: 1.1rem; }
+        
+        ul { padding-left: 20px; color: #ddd; line-height: 1.6; }
+        li { margin-bottom: 8px; }
+        p { color: #ddd; line-height: 1.6; }
+        
+        .mermaid {
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            overflow-x: auto;
+        }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
+        th { text-align: left; padding: 12px; border-bottom: 1px solid var(--accent-cyan); color: var(--accent-cyan); }
+        td { padding: 12px; border-bottom: 1px solid var(--glass-border); color: #ddd; }
+
+        footer {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            border-top: 1px solid var(--glass-border);
+            margin-top: 50px;
+        }
+    </style>
+</head>
+<body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <header>
+        <a href="/" class="logo">AI <span>News</span></a>
+        <nav>
+            <a href="/" class="nav-link">홈</a>
+            <a href="/podcast" class="nav-link">팟캐스트</a>
+            <a href="/manager" class="nav-link">관리자</a>
+        </nav>
+    </header>
+
+    <main>
+        <h1>프로젝트 설계 및 아키텍처</h1>
+        <p style="color: var(--text-muted); margin-bottom: 40px;">AI 뉴스 플랫폼의 기술적 개요입니다.</p>
+
+        <div class="section-card">
+            <h2>1. 프로젝트 개요</h2>
+            <ul>
+                <li><strong>프로젝트명</strong>: AI News Platform (Sosig Shop)</li>
+                <li><strong>목표</strong>: 경제 및 AI 뉴스를 자동으로 수집하고, 이를 요약 및 음성 변환하여 매일 브리핑(팟캐스트) 형태로 제공하는 웹 서비스 구축.</li>
+                <li><strong>핵심 가치</strong>: "Curated Intelligence, Delivered Daily." - 바쁜 현대인을 위해 핵심 뉴스만 선별하여 들려줌으로써 시간 절약.</li>
+            </ul>
+        </div>
+
+        <div class="section-card">
+            <h2>2. 시스템 아키텍처</h2>
+            <p><strong>흐름</strong>: 데이터 수집 (네이버 뉴스) -> AI 가공 (Qwen 2.5 & TTS) -> 저장 (MariaDB) -> 서비스 (Flask).</p>
+            
+            <div class="mermaid">
+graph TD
+    subgraph "External Source"
+        Naver[네이버 뉴스]
+    end
+
+    subgraph "Backend Server (Python/Flask)"
+        Crawler[🕷️ 뉴스 크롤러]
+        DB[(MariaDB)]
+        AI[🤖 AI 프로세서]
+        TTS[🗣️ TTS 엔진]
+        FFmpeg[🎵 오디오 믹서]
+        WebServer[🌐 Flask 웹 서버]
+    end
+
+    subgraph "User Interface"
+        Web[💻 웹 브라우저]
+        Podcast[🎧 팟캐스트 플레이어]
+        Globe[🌍 3D 관리자 게이트]
+    end
+
+    Naver -->|검색 및 수집| Crawler
+    Crawler -->|원문 저장| DB
+    Crawler -->|트리거| AI
+    AI -->|대본 작성| TTS
+    TTS -->|오디오 생성| FFmpeg
+    FFmpeg -->|최종 MP3| WebServer
+    WebServer -->|콘텐츠 제공| Web
+    Web -->|청취| Podcast
+    Web -->|관리| Globe
+    Globe -->|MFA 인증| WebServer
+    DB <-->|메타데이터 R/W| WebServer
+            </div>
+        </div>
+
+        <div class="section-card">
+            <h2>3. 기술 스택</h2>
+            <ul>
+                <li><strong>Frontend</strong>: HTML5, CSS3, Three.js</li>
+                <li><strong>Backend</strong>: Python (Flask)</li>
+                <li><strong>Database</strong>: MariaDB</li>
+                <li><strong>AI</strong>: Qwen 2.5 (Local PC), Edge TTS</li>
+            </ul>
+        </div>
+
+        <div class="section-card">
+            <h2>4. 데이터베이스 스키마</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>테이블</th>
+                        <th>설명</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>keywords</td><td>뉴스 키워드 및 우선순위 관리</td></tr>
+                    <tr><td>episodes</td><td>생성된 팟캐스트 에피소드 저장</td></tr>
+                    <tr><td>verification_codes</td><td>MFA 인증 세션 데이터</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <footer>
+        &copy; 2025 AI News Platform. All rights reserved.<br>
+        Created by TsSong, using Google's Antigravity (rainsosig@gmail.com)
+    </footer>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+</body>
+</html>
