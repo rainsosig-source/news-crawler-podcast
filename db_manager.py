@@ -51,8 +51,19 @@ def init_db():
                 cursor.execute("ALTER TABLE episodes ADD COLUMN keyword_id INT")
                 cursor.execute("ALTER TABLE episodes ADD INDEX idx_keyword (keyword_id)")
                 print("Added keyword_id column to existing episodes table.")
-            except:
-                pass  # Column already exists
+            except pymysql.err.OperationalError:
+                pass  # Column already exists (expected)
+            
+            # Add topic column to keywords table if it doesn't exist
+            try:
+                cursor.execute("ALTER TABLE keywords ADD COLUMN topic VARCHAR(100)")
+                print("Added topic column to keywords table.")
+                
+                # Migration: Copy existing keyword values to topic where topic is NULL
+                cursor.execute("UPDATE keywords SET topic = keyword WHERE topic IS NULL")
+                print("Migrated existing keywords to topic field.")
+            except pymysql.err.OperationalError:
+                pass  # Column already exists (expected)
                 
         conn.commit()
         print("Database table 'episodes' checked/created.")
@@ -94,7 +105,8 @@ def get_active_keywords():
     keywords = []
     try:
         with conn.cursor() as cursor:
-            sql = "SELECT id, keyword, requirements FROM keywords WHERE priority > 0 ORDER BY priority DESC"
+            # COALESCE: topic이 NULL이면 keyword 값을 사용
+            sql = "SELECT id, keyword, COALESCE(topic, keyword) as topic, requirements FROM keywords WHERE priority > 0 ORDER BY priority DESC"
             cursor.execute(sql)
             keywords = cursor.fetchall()
     except Exception as e:

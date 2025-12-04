@@ -333,7 +333,8 @@
                 <thead>
                     <tr>
                         <th>Priority</th>
-                        <th>Keyword</th>
+                        <th>Topic (주제)</th>
+                        <th>Keyword (검색어)</th>
                         <th>Requirements</th>
                         <th>Actions</th>
                     </tr>
@@ -355,8 +356,13 @@
                 <input type="hidden" id="keywordId">
 
                 <div class="form-group">
-                    <label>Keyword</label>
-                    <input type="text" id="keywordInput" required placeholder="e.g. Artificial Intelligence">
+                    <label>Topic (주제 - 카테고리명)</label>
+                    <input type="text" id="topicInput" required placeholder="예: 인공지능, 경제, 부동산">
+                </div>
+
+                <div class="form-group">
+                    <label>Keyword (검색어 - 네이버 뉴스 검색)</label>
+                    <input type="text" id="keywordInput" required placeholder="예: AI 기술 혁신, 금리 인상">
                 </div>
 
                 <div class="form-group">
@@ -401,7 +407,8 @@
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td><span class="priority-badge">${k.priority}</span></td>
-                    <td style="font-weight: 600;">${k.keyword}</td>
+                    <td style="font-weight: 600;">${k.topic || k.keyword}</td>
+                    <td style="color: var(--text-muted);">${k.keyword}</td>
                     <td class="requirements-cell" title="${k.requirements || ''}">${k.requirements || '-'}</td>
                     <td class="actions">
                         <button class="action-btn edit-btn" onclick="editKeyword(${k.id})">✎</button>
@@ -428,6 +435,7 @@
 
             document.getElementById('modalTitle').innerText = 'Edit Keyword';
             document.getElementById('keywordId').value = k.id;
+            document.getElementById('topicInput').value = k.topic || k.keyword;
             document.getElementById('keywordInput').value = k.keyword;
             document.getElementById('priorityInput').value = k.priority;
             document.getElementById('requirementsInput').value = k.requirements || '';
@@ -443,6 +451,7 @@
             e.preventDefault();
             const id = document.getElementById('keywordId').value;
             const data = {
+                topic: document.getElementById('topicInput').value,
                 keyword: document.getElementById('keywordInput').value,
                 priority: parseInt(document.getElementById('priorityInput').value),
                 requirements: document.getElementById('requirementsInput').value

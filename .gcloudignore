@@ -1,31 +1,38 @@
+# Cloud Build에서 제외할 파일들
+# .dockerignore와 동일하게 설정
+
 # 민감 정보 파일
 .env
 kakao_token.json
 
+# 개발 환경
 .git
 .gitignore
-.dockerignore
-.venv
+.venv/
+venv/
 .vscode
 .idea
-__pycache__
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .DS_Store
 *.log
 
-# Windows 실행 파일
+# Windows 실행 파일 (Linux에서 사용 불가)
 ffmpeg.exe
 ffplay.exe
 ffprobe.exe
 
-# 백업 및 체크 폴더
-backup
-deploy
-check
-utils
-mp3
+# 백업 및 로컬 폴더
+backup/
+deploy/
+check/
+utils/
+mp3/
+MP3/
+static/
+templates/
 
 # 임시 파일
 temp_*.mp3
@@ -49,8 +56,11 @@ upload_about.py
 download_manager.py
 list_models.py
 
-# 문서 (필요한 가이드만 포함)
+# 사용하지 않는 파일
+podcast_generator_gemini.py
+gcs_uploader.py
+kakao_message_sender.py
+cleanup_project.bat
+
+# 문서
 *.md
-!CLOUD_DEPLOY_GUIDE.md
-!GEMINI_API_GUIDE.md
-!KAKAO_GUIDE.md
