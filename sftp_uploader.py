@@ -33,6 +33,14 @@ def create_remote_dir(sftp, path):
 def upload_file(local_path):
     """Uploads a file to the Flask server's static folder."""
     
+    # 환경변수 유효성 검사
+    if not HOST or not USERNAME or not PASSWORD:
+        print("❌ SFTP 설정이 누락되었습니다. .env 파일을 확인하세요.")
+        print(f"   HOST: {'설정됨' if HOST else '미설정'}")
+        print(f"   USERNAME: {'설정됨' if USERNAME else '미설정'}")
+        print(f"   PASSWORD: {'설정됨' if PASSWORD else '미설정'}")
+        return None
+    
     # Generate timestamp for folder and filename
     now = datetime.now()
     year = now.strftime("%Y")

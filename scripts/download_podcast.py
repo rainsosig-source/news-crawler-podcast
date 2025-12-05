@@ -13,9 +13,9 @@ client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 client.connect(HOST, PORT, USERNAME, PASSWORD)
 sftp = client.open_sftp()
 
-# Upload about.html
-sftp.put('templates/about.html', '/root/flask-app/templates/about.html')
-print("✅ about.html uploaded!")
+# Download podcast.html
+sftp.get('/root/flask-app/templates/podcast.html', 'templates/podcast.html')
+print("Downloaded podcast.html")
 
 sftp.close()
 client.close()

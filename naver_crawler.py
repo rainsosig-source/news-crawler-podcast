@@ -319,7 +319,6 @@ def get_news_content(url):
     except Exception as e:
         return f"본문 추출 중 오류 발생: {e}"
 
-import time
 from datetime import datetime, timedelta 
 
 from podcast_generator import generate_podcast_script
