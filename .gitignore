@@ -22,6 +22,7 @@ ENV/
 
 # 로그 파일
 *.log
+logs.json
 
 # OS 파일
 .DS_Store

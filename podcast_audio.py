@@ -173,7 +173,23 @@ async def create_podcast_audio(script_text, output_filename="podcast.mp3", title
             
     # Export
     combined.export(output_filename, format="mp3")
-    print(f"✅ 팟캐스트 오디오 생성 완료 (총 {len(temp_files)}개 세그먼트): {output_filename}")
+    
+    # ✅ 파일 크기 검증 (1MB 최소 기준)
+    try:
+        file_size = os.path.getsize(output_filename)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        if file_size < 1048576:  # 1MB = 1048576 bytes
+            print(f"❌ 파일 크기 부족: {file_size_mb:.2f}MB (최소 1MB 필요)")
+            print(f"   생성된 파일 삭제: {output_filename}")
+            os.remove(output_filename)
+            return None
+        
+        print(f"✅ 팟캐스트 오디오 생성 완료 (크기: {file_size_mb:.2f}MB, 세그먼트: {len(temp_files)}개): {output_filename}")
+    except Exception as e:
+        print(f"❌ 파일 크기 확인 중 오류: {e}")
+        return None
+        
     return output_filename
 
 def run_audio_generation(script, filename, title=None):

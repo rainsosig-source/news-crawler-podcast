@@ -130,6 +130,26 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                             print("❌ 오디오 생성 실패 - 유효한 대본이 없습니다. 업로드 및 DB 저장 건너뜀.")
                             stats['failed'] += 1
                         else:
+                            # ✅ 파일 크기 이중 검증 (안전장치)
+                            try:
+                                file_size = os.path.getsize(filename)
+                                file_size_mb = file_size / (1024 * 1024)
+                                
+                                if file_size < 1048576:  # 1MB = 1048576 bytes
+                                    print(f"❌ 파일 크기 부족: {file_size_mb:.2f}MB (최소 1MB 필요)")
+                                    print(f"   업로드 및 DB 등록 건너뜀")
+                                    if os.path.exists(filename):
+                                        os.remove(filename)
+                                        print(f"   로컬 파일 삭제: {filename}")
+                                    stats['failed'] += 1
+                                    continue
+                                
+                                print(f"✅ 파일 크기 검증 통과: {file_size_mb:.2f}MB")
+                            except Exception as e:
+                                print(f"❌ 파일 크기 확인 중 오류: {e}")
+                                stats['failed'] += 1
+                                continue
+                            
                             print("[서버로 업로드 중...]")
                             remote_path = upload_file(filename)
                             
