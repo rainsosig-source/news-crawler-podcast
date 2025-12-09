@@ -189,6 +189,10 @@ def generate_podcast_script(news_title, news_content, requirements=None, model="
             
             print(f"✅ 생성 완료! (소요 시간: {elapsed_time:.2f}초)")
             
+            # Rate limit 보호: API 호출 후 7초 대기
+            print("⏳ API Rate Limit 보호를 위해 7초 대기 중...")
+            time.sleep(7)
+            
             # 대본 정제 및 검증
             script = clean_script_output(raw_script)
             
@@ -213,8 +217,8 @@ def generate_podcast_script(news_title, news_content, requirements=None, model="
         except Exception as e:
             print(f"❌ Gemini API 오류 (시도 {attempt + 1}): {e}")
             if attempt < max_retries:
-                print(f"재시도 중... ({attempt + 1}/{max_retries})")
-                time.sleep(2)
+                print(f"재시도 중... ({attempt + 1}/{max_retries}) - 30초 후 재시도")
+                time.sleep(30)  # Rate limit 회복을 위해 30초 대기
                 continue
             else:
                 return f"⚠️ Gemini API 오류 발생: {e}"
