@@ -67,29 +67,9 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                 # Title
                 title = headline.get_text(strip=True)
                 
-                # Link - 네이버 뉴스 링크 우선 사용 (본문 추출 성공률 향상)
-                link = ""
-                original_link = ""
-                
-                # 1. 먼저 원본 링크 저장
+                # Link (parent a tag)
                 link_el = headline.find_parent("a")
-                if link_el:
-                    original_link = link_el['href']
-                
-                # 2. 상위 li.bx 컨테이너에서 네이버 뉴스 링크 탐색
-                news_item = headline.find_parent("li")
-                if news_item:
-                    # news.naver.com 링크 찾기
-                    naver_news_link = news_item.find("a", href=lambda h: h and "news.naver.com" in h)
-                    if naver_news_link:
-                        link = naver_news_link['href']
-                        print(f"✅ 네이버뉴스 링크 발견")
-                
-                # 3. 네이버 뉴스 링크가 없으면 원본 사용
-                if not link:
-                    link = original_link
-                    if link:
-                        print(f"⚠️ 원본 링크 사용 (네이버뉴스 없음)")
+                link = link_el['href'] if link_el else ""
                 
                 # Check for duplicates
                 if link and db_manager.is_duplicate_news(link):
@@ -388,10 +368,20 @@ if __name__ == "__main__":
     # Initialize DB
     db_manager.init_db()
     
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 크롤러 시작.")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 자동 크롤러 시작.")
     
-    # Run once and exit (Windows Task Scheduler will re-run every hour)
+    # First run immediately
     run_crawling_job()
     
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 크롤링 완료.")
-
+    while True:
+        now = datetime.now()
+        # Calculate next hour
+        next_run = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        wait_seconds = (next_run - now).total_seconds()
+        
+        print(f"다음 실행 시간: {next_run.strftime('%H:%M:%S')} ({int(wait_seconds//60)}분 {int(wait_seconds%60)}초 후)")
+        
+        time.sleep(wait_seconds)
+        
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 크롤링 시작...")
+        run_crawling_job()

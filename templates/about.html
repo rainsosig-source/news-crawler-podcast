@@ -367,8 +367,9 @@
             <ul>
                 <li><strong>프로젝트명</strong>: AI News Platform (Sosig Shop)</li>
                 <li><strong>목표</strong>: 매일 엄선된 AI/경제 뉴스를 크롤링하여 자동 요약 후 팟캐스트로 제공</li>
-                <li><strong>기술</strong>: Python (Flask), MariaDB, Google Gemini API, Google Cloud TTS, Cloud Run</li>
-                <li><strong>인프라</strong>: Google Cloud Platform (Cloud Run, Scheduler, Logging)</li>
+                <li><strong>기술</strong>: Python (Flask), MariaDB, Google Gemini API, Google Cloud TTS, Windows Task
+                    Scheduler</li>
+                <li><strong>인프라</strong>: Windows PC (자동 실행), Remote Server (Web/DB)</li>
                 <li><strong>개발 기간</strong>: 2025년 11월 ~ 진행 중</li>
             </ul>
         </div>
@@ -402,23 +403,23 @@
                 graph TD
                 %% Node Styling
                 classDef blue fill:#e1f5fe,stroke:#039be5,stroke-width:2px,color:#01579b;
-                classDef cloud fill:#f3e5f5,stroke:#8e24aa,stroke-width:2px,color:#4a148c;
+                classDef windows fill:#fff3e0,stroke:#ff6f00,stroke-width:2px,color:#e65100;
                 classDef server fill:#e0f2f1,stroke:#00695c,stroke-width:2px,color:#004d40;
 
-                subgraph GCP [☁️ Google Cloud Platform]
-                Scheduler[🕒 Cloud Scheduler]:::cloud -->|Trigger| CloudRun[🚀 Cloud Run]:::blue
+                subgraph Windows [🖥️ Windows PC]
+                Scheduler[⏰ Task Scheduler]:::windows --> |매시 정각| Crawler[🐍 Python Crawler]:::blue
                 end
 
                 subgraph External [🌐 External APIs]
-                CloudRun <-->|API| Naver[네이버 뉴스]:::blue
-                    CloudRun <-->|API| Gemini[Google Gemini]:::blue
-                        CloudRun <-->|API| G_TTS[Google TTS]:::blue
+                Crawler <--> |크롤링| Naver[네이버 뉴스]:::blue
+                    Crawler <--> |대본 생성| Gemini[Google Gemini]:::blue
+                        Crawler <--> |음성 합성| G_TTS[Google TTS]:::blue
                             end
 
                             subgraph RemoteServer [🏢 Remote Server 139.150.x.x]
-                            CloudRun -->|SQL| MariaDB[(🗄️ MariaDB)]:::server
-                            CloudRun -->|SFTP| SFTP_Server[📂 Nginx / SFTP]:::server
-                            User((👤 Client)) <-->|HTTPS| SFTP_Server
+                            Crawler --> |SQL| MariaDB[(🗄️ MariaDB)]:::server
+                            Crawler --> |SFTP| FileServer[📂 Nginx / SFTP]:::server
+                            User((👤 Client)) <--> |HTTPS| FileServer
                                 end
             </div>
         </div>
@@ -427,7 +428,7 @@
             <h2>3. 주요 기능</h2>
 
             <h3>📰 자동 뉴스 크롤링</h3>
-            <p>Google Cloud Scheduler가 매시 정각 트리거하여 최신 AI/경제 뉴스를 수집.</p>
+            <p>Windows Task Scheduler가 매시 정각 Python 크롤러를 실행하여 최신 AI/경제 뉴스를 수집.</p>
 
             <h3>🤖 AI 요약 & 대본 (Gemini)</h3>
             <p>Google Gemini 2.5 Flash 모델이 '상현(선배)'과 '지민(후배)'의 티키타카 대본으로 재구성.</p>
@@ -458,16 +459,18 @@
                 <li><strong>Phase 5</strong>: UI/UX 개선 (다크 모드, 애니메이션)</li>
                 <li><strong>Phase 6</strong>: Google Cloud Run 마이그레이션 및 완전 자동화</li>
                 <li><strong>Phase 7</strong>: Topic/Keyword 분리 시스템 및 Cloud Run 메모리 최적화 (2025.12)</li>
+                <li><strong>Phase 8</strong>: Windows로컬 PC 마이그레이션 - API Rate Limit 최적화 및 네이버 뉴스 우선 추출 (2025.12)</li>
             </ul>
 
             <h3>기술적 도전</h3>
             <ul>
-                <li><strong>서버리스 배포</strong>: Cloud Run 환경에 맞춰 Docker 컨테이너 최적화 및 Windows 바이너리 제거</li>
+                <li><strong>로컬 실행 최적화</strong>: Windows Task Scheduler 기반 자동화로 Cloud Run의 SFTP 제약 및 네트워크 제한 문제 해결</li>
                 <li><strong>IP 차단 해결</strong>: 무료 TTS 서비스의 IP 차단 문제를 Google Cloud TTS 공식 API 도입으로 해결</li>
                 <li><strong>프롬프트 엔지니어링</strong>: 단순 요약을 넘어선 '페르소나(상현/지민)' 기반의 몰입감 있는 대본 생성</li>
                 <li><strong>자동화 파이프라인</strong>: Cloud Scheduler와 연동하여 사람의 개입 없는 24/7 뉴스 생성 시스템 구축</li>
                 <li><strong>Topic/Keyword 분리</strong>: 검색어(Keyword)와 표시명(Topic)을 분리하여 유연한 카테고리 관리</li>
-                <li><strong>메모리 최적화</strong>: TTS 세그먼트 증가에 따른 Cloud Run 메모리 512MB → 1GB 확장</li>
+                <li><strong>API Rate Limit 보호</strong>: Gemini API 호출 후 7초 대기 및 실패 시 30초 재시도로 429 오류 방지</li>
+                <li><strong>콘텐츠 추출 개선</strong>: 네이버 뉴스 링크 우선 사용으로 본문 추출 성공률 향상</li>
             </ul>
         </div>
     </main>
