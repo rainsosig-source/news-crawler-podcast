@@ -4,6 +4,41 @@ import urllib.parse
 import os
 import time
 import random
+import re
+import signal
+import sys
+from datetime import datetime, timedelta
+
+from podcast_generator import generate_podcast_script
+from podcast_audio import run_audio_generation
+from sftp_uploader import upload_file
+import db_manager
+
+# User-Agent 목록 (랜덤 선택으로 차단 방지)
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+]
+
+def get_random_headers():
+    """랜덤 User-Agent를 포함한 헤더 반환"""
+    return {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    }
+
+# Graceful Shutdown 플래그
+_shutdown_requested = False
+
+def signal_handler(signum, frame):
+    """Ctrl+C 등 시그널 처리"""
+    global _shutdown_requested
+    print("\n⚠️ 종료 요청 감지. 현재 작업 완료 후 종료합니다...")
+    _shutdown_requested = True
 
 def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=3):
     # Encode the query for the URL
@@ -13,9 +48,7 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
     # Note: query parameter is replaced with the user input
     url = f"https://search.naver.com/search.naver?ssc=tab.news.all&query={encoded_query}&sm=tab_opt&sort=1&nso=so%3Add"
     
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    }
+    headers = get_random_headers()
     
     # Statistics tracking
     stats = {
@@ -204,7 +237,6 @@ def validate_content(content):
     
     return True
 
-import re
 
 def clean_article_text(text):
     """Remove reporter info, copyright, and other unwanted patterns from article text."""
@@ -249,10 +281,8 @@ def clean_article_text(text):
 def get_news_content(url):
     """Extract news article content with improved strategies."""
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        }
-        response = requests.get(url, headers=headers, timeout=10)
+        headers = get_random_headers()
+        response = requests.get(url, headers=headers, timeout=15)  # 타임아웃 15초로 증가
         response.raise_for_status()
         
         # Detect encoding
@@ -339,12 +369,6 @@ def get_news_content(url):
     except Exception as e:
         return f"본문 추출 중 오류 발생: {e}"
 
-from datetime import datetime, timedelta 
-
-from podcast_generator import generate_podcast_script
-from podcast_audio import run_audio_generation
-from sftp_uploader import upload_file
-import db_manager
 
 def run_crawling_job():
     keywords = db_manager.get_active_keywords()
@@ -365,23 +389,17 @@ def run_crawling_job():
         )
 
 if __name__ == "__main__":
+    # Graceful Shutdown 시그널 핸들러 등록
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
     # Initialize DB
     db_manager.init_db()
     
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 자동 크롤러 시작.")
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] 크롤러 시작")
     
-    # First run immediately
+    # 한 번 실행 후 종료
     run_crawling_job()
     
-    while True:
-        now = datetime.now()
-        # Calculate next hour
-        next_run = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
-        wait_seconds = (next_run - now).total_seconds()
-        
-        print(f"다음 실행 시간: {next_run.strftime('%H:%M:%S')} ({int(wait_seconds//60)}분 {int(wait_seconds%60)}초 후)")
-        
-        time.sleep(wait_seconds)
-        
-        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] 크롤링 시작...")
-        run_crawling_job()
+    print(f"\n✅ 크롤링 완료! [{datetime.now().strftime('%H:%M:%S')}]")
+
