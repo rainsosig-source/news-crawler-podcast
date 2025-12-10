@@ -270,6 +270,28 @@ def clean_article_text(text):
     # SNS 공유 관련 제거
     text = re.sub(r'(카카오톡|페이스북|트위터|공유하기).*', '', text)
     
+    # ===== 네이버 뉴스 특유 불필요 텍스트 제거 =====
+    naver_noise_patterns = [
+        r'기사 섹션 분류 안내.*?있습니다\.',  # 섹션 분류 안내
+        r'이 기사는 언론사에서.*?분류했습니다\.',  # 언론사 분류 안내
+        r'섹션으로 분류했습니다',
+        r'.*?바로가기\n?',  # 바로가기 링크
+        r'기사의 섹션 정보는.*',  # 섹션 정보 안내
+        r'언론사는 개별 기사를.*',  # 언론사 안내
+        r'\[.*?뉴스\]',  # [OO뉴스] 패턴
+        r'【.*?】',  # 【기사】 패턴
+        r'▶.*?\n?',  # ▶ 관련기사 등
+        r'◆.*?\n?',  # ◆ 관련기사 등
+        r'■.*?\n?',  # ■ 관련기사 등
+        r'☞.*?\n?',  # ☞ 관련기사 등
+        r'▷.*?\n?',  # ▷ 관련기사 등
+        r'사진=.*?\n?',  # 사진 출처
+        r'\(사진.*?\)',  # (사진 설명)
+        r'영상=.*?\n?',  # 영상 출처
+    ]
+    for pattern in naver_noise_patterns:
+        text = re.sub(pattern, '', text, flags=re.DOTALL)
+    
     # 여러 줄바꿈을 2개로 정리
     text = re.sub(r'\n{3,}', '\n\n', text)
     
@@ -279,94 +301,243 @@ def clean_article_text(text):
     return text
 
 def get_news_content(url):
-    """Extract news article content with improved strategies."""
+    """
+    Extract news article content with multi-layer fallback strategies.
+    
+    전략 순서:
+    1. 네이버 뉴스 전용 셀렉터 (최신 구조 반영)
+    2. 주요 언론사별 맞춤 셀렉터
+    3. 공통 뉴스 셀렉터
+    4. <article> 태그
+    5. <p> 태그 휴리스틱
+    6. meta description 폴백
+    """
+    extraction_log = []  # 디버깅용 로그
+    
     try:
         headers = get_random_headers()
-        response = requests.get(url, headers=headers, timeout=15)  # 타임아웃 15초로 증가
+        response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
         response.raise_for_status()
         
         # Detect encoding
         response.encoding = response.apparent_encoding
+        final_url = response.url  # 리다이렉트 후 최종 URL
         
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Remove unwanted elements (enhanced)
+        # ===== 불필요 요소 제거 (강화) =====
         for unwanted in soup([
             "script", "style", "header", "footer", "nav", 
-            "iframe", "noscript", "aside"  # Added aside for sidebars
+            "iframe", "noscript", "aside", "figure", "figcaption"
         ]):
             unwanted.decompose()
         
-        # Remove ads and banners
-        for ad in soup.find_all(class_=lambda c: c and ('ad' in c.lower() or 'banner' in c.lower())):
-            ad.decompose()
-        
-        # Remove Naver news specific unwanted elements
-        naver_unwanted_classes = [
-            'end_photo_org',  # 사진 저작권
-            'journalist',  # 기자 정보
-            'byline',  # 출처
-            'copyright',  # 저작권
-            'article_sponsor',  # 광고
-            'relation_lst',  # 관련기사
-            'categorize',  # 카테고리
+        # 광고, 배너, 관련기사 제거
+        unwanted_patterns = [
+            'ad', 'banner', 'sidebar', 'related', 'recommend',
+            'comment', 'sns', 'share', 'copyright', 'journalist',
+            'byline', 'photo_org', 'sponsor', 'modal', 'popup'
         ]
-        
-        for class_name in naver_unwanted_classes:
-            for element in soup.find_all(class_=lambda c: c and class_name in c.lower()):
+        for pattern in unwanted_patterns:
+            for element in soup.find_all(class_=lambda c: c and pattern in c.lower()):
+                element.decompose()
+            for element in soup.find_all(id=lambda i: i and pattern in i.lower()):
                 element.decompose()
         
-        # Remove related articles sections
-        related_keywords = ['관련기사', '함께 보면', '이전 기사', '다음 기사', '추천 기사', '인기기사']
-        for element in soup.find_all(['div', 'section', 'aside']):
+        # 관련기사 텍스트 기반 제거
+        related_keywords = ['관련기사', '함께 보면', '이전 기사', '다음 기사', '추천 기사', '인기기사', '많이 본']
+        for element in soup.find_all(['div', 'section', 'aside', 'ul']):
             if element.get_text():
-                text_sample = element.get_text()[:50]
+                text_sample = element.get_text()[:100]
                 if any(keyword in text_sample for keyword in related_keywords):
                     element.decompose()
         
-        content = []
+        # ===== Strategy 1: 네이버 뉴스 전용 (최신 구조) =====
+        if 'naver.com' in final_url:
+            naver_selectors = [
+                '#dic_area',              # 네이버 뉴스 본문 (최신)
+                '#newsct_article',        # 네이버 뉴스 본문 (구버전)
+                '#articeBody',            # 네이버 뉴스 본문 (구버전2)
+                '#articleBodyContents',   # 네이버 뉴스 본문 (구버전3)
+                '.newsct_article',        # 클래스 버전
+                '._article_body',         # 모바일 버전
+                '#content',               # 일반적 컨텐츠 영역
+            ]
+            for selector in naver_selectors:
+                element = soup.select_one(selector)
+                if element:
+                    text = element.get_text(separator='\n', strip=True)
+                    text = clean_article_text(text)
+                    if validate_content(text):
+                        extraction_log.append(f"✓ 네이버 셀렉터 성공: {selector}")
+                        print(f"  [추출] 네이버 뉴스 ({selector})")
+                        return text
+                    extraction_log.append(f"✗ 네이버 셀렉터 검증 실패: {selector}")
         
-        # Strategy 1: Try to find article tag first (common in modern news sites)
-        article = soup.find('article')
-        if article:
-            text = article.get_text(separator='\n', strip=True)
-            text = clean_article_text(text)
-            if validate_content(text):
-                return text
+        # ===== Strategy 2: 주요 언론사별 맞춤 셀렉터 =====
+        press_selectors = {
+            # 조선일보
+            'chosun.com': ['#article-view-content-div', '.article-body', '#articleBody'],
+            # 중앙일보
+            'joongang.co.kr': ['#article_body', '.article_body', '#article-content'],
+            # 동아일보
+            'donga.com': ['#article_body', '.article_body', '.article_txt'],
+            # 한겨레
+            'hani.co.kr': ['.article-body', '.article-text', '#article-body'],
+            # 경향신문
+            'khan.co.kr': ['.art_body', '.article_body', '#articleBody'],
+            # 한국경제
+            'hankyung.com': ['#articletxt', '.article-body', '#article-body-view'],
+            # 매일경제
+            'mk.co.kr': ['#article_body', '.art_txt', '.article_body'],
+            # 연합뉴스
+            'yna.co.kr': ['.article-txt', '.story-news', '#articleWrap'],
+            # SBS
+            'sbs.co.kr': ['.article_cont_area', '.text_area', '#news_content'],
+            # KBS
+            'kbs.co.kr': ['.detail-body', '.article-body', '#cont_newstext'],
+            # MBC
+            'mbc.co.kr': ['.news_txt', '.article_body', '.article-body'],
+            # JTBC
+            'jtbc.co.kr': ['.article_content', '.article-content', '#article-body'],
+            # YTN
+            'ytn.co.kr': ['.paragraph', '.article-body', '#CmAdContent'],
+            # 뉴시스
+            'newsis.com': ['.article_body', '.viewer', '#articleBody'],
+            # 뉴스1
+            'news1.kr': ['.article', '.article_body', '#news-body'],
+            # 이데일리
+            'edaily.co.kr': ['.news_body', '.article_body', '#articleBody'],
+            # 머니투데이
+            'mt.co.kr': ['#textBody', '.article-body', '.textBody'],
+            # 서울경제
+            'sedaily.com': ['#v-article-content', '.article_view', '.article_body'],
+            # 오마이뉴스
+            'ohmynews.com': ['.article_body', '.at_contents', '#articleBody'],
+            # 프레시안
+            'pressian.com': ['.article_body', '.article-body', '#news_body'],
+        }
         
-        # Strategy 2: Try common news content classes/ids
-        content_selectors = [
-            {'id': 'articleBodyContents'},  # Naver news
-            {'id': 'articeBody'},
-            {'class_': 'article_body'},
-            {'class_': 'article-body'},
-            {'id': 'newsct_article'},
+        for domain, selectors in press_selectors.items():
+            if domain in final_url:
+                for selector in selectors:
+                    element = soup.select_one(selector)
+                    if element:
+                        text = element.get_text(separator='\n', strip=True)
+                        text = clean_article_text(text)
+                        if validate_content(text):
+                            extraction_log.append(f"✓ 언론사 셀렉터 성공: {domain} - {selector}")
+                            print(f"  [추출] {domain} ({selector})")
+                            return text
+                        extraction_log.append(f"✗ 언론사 셀렉터 검증 실패: {domain} - {selector}")
+                break  # 해당 언론사 셀렉터 시도 후 다음 전략으로
+        
+        # ===== Strategy 3: 공통 뉴스 셀렉터 =====
+        common_selectors = [
+            'article',
+            '[itemprop="articleBody"]',
+            '.article-body',
+            '.article_body', 
+            '.article-content',
+            '.article_content',
+            '.news-body',
+            '.news_body',
+            '.post-content',
+            '.entry-content',
+            '#article-body',
+            '#article_body',
+            '#articleBody',
+            '#content-body',
+            '.story-body',
+            '.text-body',
         ]
         
-        for selector in content_selectors:
-            element = soup.find('div', selector)
+        for selector in common_selectors:
+            element = soup.select_one(selector)
             if element:
                 text = element.get_text(separator='\n', strip=True)
                 text = clean_article_text(text)
                 if validate_content(text):
+                    extraction_log.append(f"✓ 공통 셀렉터 성공: {selector}")
+                    print(f"  [추출] 공통 셀렉터 ({selector})")
                     return text
-            
-        # Strategy 3: Extract all p tags (fallback)
+                extraction_log.append(f"✗ 공통 셀렉터 검증 실패: {selector}")
+        
+        # ===== Strategy 4: <p> 태그 휴리스틱 (강화) =====
         paragraphs = soup.find_all('p')
+        content = []
         for p in paragraphs:
             text = p.get_text(strip=True)
-            if len(text) > 30:  # Filter out short texts (menus, copyrights, etc.)
+            # 본문 가능성 높은 문단만 수집 (최소 50자, 문장 형태)
+            if len(text) > 50 and ('다.' in text or '요.' in text or '죠.' in text):
                 content.append(text)
         
         if content:
             combined = "\n".join(content)
             combined = clean_article_text(combined)
             if validate_content(combined):
+                extraction_log.append(f"✓ <p> 태그 휴리스틱 성공 ({len(content)}개 문단)")
+                print(f"  [추출] <p> 태그 휴리스틱 ({len(content)}개 문단)")
                 return combined
-            
+            extraction_log.append(f"✗ <p> 태그 휴리스틱 검증 실패")
+        
+        # ===== Strategy 5: 가장 긴 텍스트 블록 찾기 (최후 휴리스틱) =====
+        all_divs = soup.find_all('div')
+        best_text = ""
+        best_score = 0
+        
+        for div in all_divs:
+            text = div.get_text(separator='\n', strip=True)
+            # 점수 계산: 길이 + 한글 비율 + 마침표 빈도
+            if len(text) > 200:
+                korean_chars = len([c for c in text if '가' <= c <= '힣'])
+                period_count = text.count('.') + text.count('다.')
+                score = len(text) * 0.3 + korean_chars * 0.5 + period_count * 10
+                
+                if score > best_score:
+                    best_score = score
+                    best_text = text
+        
+        if best_text:
+            best_text = clean_article_text(best_text)
+            if validate_content(best_text):
+                extraction_log.append(f"✓ 최대 텍스트 블록 성공 (점수: {best_score:.0f})")
+                print(f"  [추출] 최대 텍스트 블록 (점수: {best_score:.0f})")
+                return best_text
+        
+        # ===== Strategy 6: Meta Description 폴백 =====
+        meta_selectors = [
+            ('meta[property="og:description"]', 'content'),
+            ('meta[name="description"]', 'content'),
+            ('meta[name="twitter:description"]', 'content'),
+        ]
+        
+        for selector, attr in meta_selectors:
+            meta = soup.select_one(selector)
+            if meta and meta.get(attr):
+                meta_content = meta.get(attr).strip()
+                if len(meta_content) > 50:
+                    extraction_log.append(f"⚠ Meta fallback 사용: {selector}")
+                    print(f"  [추출] Meta description 폴백 (본문 추출 실패, 요약만 사용)")
+                    return f"[요약] {meta_content}"
+        
+        # ===== 모든 전략 실패 =====
+        extraction_log.append("✗ 모든 전략 실패")
+        print(f"  [실패] 모든 추출 전략 실패")
+        print(f"  URL: {final_url}")
+        if extraction_log:
+            print(f"  시도된 전략: {len(extraction_log)}개")
+        
         return "본문 내용을 추출할 수 없습니다."
 
+    except requests.exceptions.Timeout:
+        print(f"  [오류] 타임아웃: {url}")
+        return "본문 추출 중 오류 발생: 요청 시간 초과"
+    except requests.exceptions.RequestException as e:
+        print(f"  [오류] 요청 실패: {e}")
+        return f"본문 추출 중 오류 발생: {e}"
     except Exception as e:
+        print(f"  [오류] 예외 발생: {e}")
         return f"본문 추출 중 오류 발생: {e}"
 
 
