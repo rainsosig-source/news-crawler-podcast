@@ -7,7 +7,7 @@ import time
 # Load environment variables
 load_dotenv()
 
-def call_gemini_rest_api(prompt, model="gemini-2.5-flash", api_key=None):
+def call_gemini_rest_api(prompt, model="gemma-3-27b-it", api_key=None):
     """
     Gemini API를 REST로 직접 호출 (Cloud Run ADC 충돌 방지)
     """
@@ -107,7 +107,7 @@ def validate_script(script_text):
     return True, ""
 
 
-def generate_podcast_script(news_title, news_content, requirements=None, model="gemini-2.5-flash", max_retries=2):
+def generate_podcast_script(news_title, news_content, requirements=None, model="gemma-3-27b-it", max_retries=2):
     """
     Generates a podcast script from news content using Gemini API (Flash model).
     """

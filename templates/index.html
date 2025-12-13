@@ -209,12 +209,14 @@
             border-radius: 24px;
             padding: 40px 30px;
             width: auto;
+            min-height: 220px;
             text-decoration: none;
             color: var(--text-main);
             transition: all 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
             display: flex;
             flex-direction: column;
             align-items: center;
+            justify-content: flex-start;
             position: relative;
             overflow: hidden;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
@@ -237,6 +239,13 @@
 
         .card:nth-child(4) {
             animation-delay: 0.9s;
+        }
+
+        .card:nth-child(5) {
+            animation-delay: 1.1s;
+            grid-column: span 2;
+            max-width: 385px;
+            justify-self: center;
         }
 
         @keyframes cardFadeIn {
@@ -364,11 +373,17 @@
             .cards {
                 grid-template-columns: 1fr;
                 gap: 20px;
+                justify-items: center;
             }
 
             .card {
                 width: 100%;
                 max-width: 320px;
+                box-sizing: border-box;
+            }
+
+            .card:nth-child(5) {
+                grid-column: span 1;
             }
         }
     </style>
@@ -406,6 +421,12 @@
                 <div class="card-icon">🌐</div>
                 <h2>네트워크 경로 추적</h2>
                 <p>전 세계 서버까지의 네트워크 경로를 3D 지구본에서 시각화해보세요.</p>
+            </a>
+
+            <a href="/vuln" class="card">
+                <div class="card-icon">🛡️</div>
+                <h2>CVE 취약점 모니터링</h2>
+                <p>주요 프로그램별 보안 취약점 현황과 최신 CVE를 모니터링하세요.</p>
             </a>
 
             <a href="/about" class="card">
