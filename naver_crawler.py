@@ -1,18 +1,50 @@
-import requests
-from bs4 import BeautifulSoup
-import urllib.parse
+# ===== 최우선 로깅 설정 (import 오류도 캐치) =====
 import os
-import time
-import random
-import re
-import signal
 import sys
-from datetime import datetime, timedelta
+import logging
 
-from podcast_generator import generate_podcast_script
-from podcast_audio import run_audio_generation
-from sftp_uploader import upload_file
-import db_manager
+# 스크립트 위치 기준으로 로그 파일 경로 설정
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_LOG_FILE = os.path.join(_SCRIPT_DIR, "crawler_log.txt")
+
+# 기본 로깅 설정 (import 전에 설정)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler(_LOG_FILE, encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+_logger = logging.getLogger("startup")
+_logger.info("=" * 60)
+_logger.info("스크립트 로드 시작")
+_logger.info(f"작업 디렉토리: {os.getcwd()}")
+_logger.info(f"스크립트 경로: {_SCRIPT_DIR}")
+
+# ===== 모듈 Import (오류 시 로그에 기록) =====
+try:
+    import requests
+    from bs4 import BeautifulSoup
+    import urllib.parse
+    import time
+    import random
+    import re
+    import signal
+    from datetime import datetime, timedelta
+    
+    from podcast_generator import generate_podcast_script
+    from podcast_audio import run_audio_generation
+    from sftp_uploader import upload_file
+    import db_manager
+    _logger.info("모든 모듈 import 성공")
+except Exception as e:
+    _logger.error(f"모듈 import 실패: {e}")
+    import traceback
+    _logger.error(traceback.format_exc())
+    sys.exit(1)
+
+logger = _logger  # 기존 코드 호환성
 
 # User-Agent 목록 (랜덤 선택으로 차단 방지)
 USER_AGENTS = [
@@ -560,17 +592,43 @@ def run_crawling_job():
         )
 
 if __name__ == "__main__":
+    import traceback
+    
+    logger.info("=" * 60)
+    logger.info("크롤러 프로세스 시작")
+    logger.info(f"작업 디렉토리: {os.getcwd()}")
+    logger.info(f"Python 경로: {sys.executable}")
+    logger.info(f"스크립트 경로: {os.path.abspath(__file__)}")
+    
     # Graceful Shutdown 시그널 핸들러 등록
     signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
     
-    # Initialize DB
-    db_manager.init_db()
+    # Windows에서는 SIGTERM을 지원하지 않음 - 스케줄러 호환성을 위해 try-except 처리
+    try:
+        signal.signal(signal.SIGTERM, signal_handler)
+    except (OSError, AttributeError):
+        pass  # Windows에서는 무시
     
-    print(f"[{datetime.now().strftime('%H:%M:%S')}] 크롤러 시작")
-    
-    # 한 번 실행 후 종료
-    run_crawling_job()
-    
-    print(f"\n✅ 크롤링 완료! [{datetime.now().strftime('%H:%M:%S')}]")
+    exit_code = 0
+    try:
+        # Initialize DB
+        logger.info("DB 초기화 중...")
+        db_manager.init_db()
+        logger.info("DB 초기화 완료")
+        
+        logger.info(f"[{datetime.now().strftime('%H:%M:%S')}] 크롤러 시작")
+        
+        # 한 번 실행 후 종료
+        run_crawling_job()
+        
+        logger.info(f"✅ 크롤링 완료! [{datetime.now().strftime('%H:%M:%S')}]")
+    except Exception as e:
+        logger.error(f"❌ 크롤링 중 치명적 오류 발생: {e}")
+        logger.error(f"상세 오류:\n{traceback.format_exc()}")
+        exit_code = 1
+    finally:
+        logger.info(f"프로세스 종료 (exit_code: {exit_code})")
+        logger.info("=" * 60)
+        # 명시적 종료 코드 반환 (스케줄러 호환성)
+        sys.exit(exit_code)
 
