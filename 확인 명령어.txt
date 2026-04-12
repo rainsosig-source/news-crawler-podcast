@@ -1,0 +1,25 @@
+# 최근 스케줄러 실행 이력 확인
+Get-WinEvent -LogName 'Microsoft-Windows-TaskScheduler/Operational' -MaxEvents 20 | Where-Object {$_.Message -like '*Newscrawler*'}
+
+# 즉시 실행 테스트
+Start-ScheduledTask -TaskName "Newscrawler"
+
+Get-ScheduledTask -TaskName "Newscrawler" | Get-ScheduledTaskInfo | Format-List *
+
+Get-ScheduledTask -TaskName "Newscrawler" | Select-Object -ExpandProperty Actions
+
+
+cd C:\Run\news
+.\.venv\Scripts\Activate.ps1
+pip install edge-tts
+
+
+cd C:\Run\news
+# 기존 가상환경 삭제
+Remove-Item -Recurse -Force .venv
+# 가상환경 새로 생성
+python -m venv .venv
+# 활성화
+.\.venv\Scripts\Activate.ps1
+# 패키지 설치
+pip install -r requirements.txt

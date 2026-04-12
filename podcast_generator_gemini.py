@@ -97,7 +97,7 @@ def generate_podcast_script_gemini(
     news_title, 
     news_content, 
     requirements=None, 
-    model_name="gemini-2.5-flash",
+    model_name="gemini-2.0-flash",
     max_retries=2
 ):
     """

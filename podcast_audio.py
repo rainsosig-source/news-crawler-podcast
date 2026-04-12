@@ -1,27 +1,43 @@
-from google.cloud import texttospeech
-from google.api_core import exceptions as google_exceptions
+import edge_tts
+import asyncio
 import os
 from pydub import AudioSegment
+import re
 
-# Voices (Google Cloud TTS Standard - 무료 400만 자/월)
-# https://cloud.google.com/text-to-speech/docs/voices
-VOICE_A = "ko-KR-Standard-C" # Male, Host A (Sanghyun) - Deep & Professional
-VOICE_B = "ko-KR-Standard-A" # Female, Host B (Jimin) - Soft & Clear
-VOICE_ANNOUNCER = "ko-KR-Standard-D" # Male, Title Announcer - Authoritative
+# Voices (Microsoft Edge TTS - 완전 무료)
+# https://github.com/rany2/edge-tts
+VOICE_A = "ko-KR-InJoonNeural"           # Male, Host A (상현) - Deep & Professional  
+VOICE_B = "ko-KR-SunHiNeural"            # Female, Host B (지민) - Soft & Clear
+VOICE_ANNOUNCER = "ko-KR-HyunsuMultilingualNeural"  # Male, Title Announcer
 
-# 싱글톤 TTS 클라이언트 (성능 개선)
-_tts_client = None
+# ===== FFmpeg 경로 설정 =====
+# SYSTEM 계정 스케줄러에서는 사용자 PATH를 상속받지 않으므로 절대 경로 필요
+# 아래 경로를 실제 ffmpeg.exe 위치로 수정하세요
+FFMPEG_SYSTEM_PATH = r"C:\ffmpeg\bin\ffmpeg.exe"  # TODO: 실제 경로로 수정
 
-def get_tts_client():
-    """TTS 클라이언트 싱글톤 인스턴스 반환"""
-    global _tts_client
-    if _tts_client is None:
-        _tts_client = texttospeech.TextToSpeechClient()
-    return _tts_client
+current_dir = os.path.dirname(os.path.abspath(__file__))
+local_ffmpeg = os.path.join(current_dir, "ffmpeg.exe")
 
-def generate_audio_segment(text, voice_name, output_file):
+if os.path.exists(local_ffmpeg):
+    # 프로젝트 폴더에 ffmpeg.exe가 있는 경우
+    print(f"Using local FFmpeg: {local_ffmpeg}")
+    AudioSegment.converter = local_ffmpeg
+    AudioSegment.ffmpeg = local_ffmpeg
+    os.environ["PATH"] += os.pathsep + current_dir
+elif os.path.exists(FFMPEG_SYSTEM_PATH):
+    # 시스템에 설치된 ffmpeg 사용 (스케줄러 SYSTEM 계정용)
+    print(f"Using system FFmpeg: {FFMPEG_SYSTEM_PATH}")
+    AudioSegment.converter = FFMPEG_SYSTEM_PATH
+    AudioSegment.ffmpeg = FFMPEG_SYSTEM_PATH
+    os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_SYSTEM_PATH)
+else:
+    # Cloud/Linux 환경 또는 PATH에서 ffmpeg 찾기
+    print("Using system FFmpeg (from PATH or Cloud/Linux environment)")
+
+
+async def generate_audio_segment_async(text, voice_name, output_file):
     """
-    Generates audio using Google Cloud Text-to-Speech API.
+    Generates audio using Microsoft Edge TTS (completely free).
     """
     try:
         # Clean up text
@@ -29,64 +45,40 @@ def generate_audio_segment(text, voice_name, output_file):
         if not text:
             return False
 
-        # 재사용 가능한 클라이언트 사용
-        client = get_tts_client()
-
-        # Set the text input to be synthesized
-        synthesis_input = texttospeech.SynthesisInput(text=text)
-
-        # Build the voice request
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="ko-KR",
-            name=voice_name
-        )
-
-        # Select the type of audio file you want returned
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.1 # Slightly faster for natural conversation
-        )
-
-        # Perform the text-to-speech request
-        response = client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
-
-        # The response's audio_content is binary.
-        with open(output_file, "wb") as out:
-            out.write(response.audio_content)
-            
+        # Create TTS communicate object
+        communicate = edge_tts.Communicate(text, voice_name, rate="+10%")
+        
+        # Save to file
+        await communicate.save(output_file)
+        
         return True
 
-    except google_exceptions.ResourceExhausted as e:
-        print(f"❌ TTS 할당량 초과: {e}")
-        return False
-    except google_exceptions.Unauthenticated as e:
-        print(f"❌ TTS 인증 실패: {e}")
-        print("   해결: gcloud auth application-default login 실행")
-        return False
-    except google_exceptions.PermissionDenied as e:
-        print(f"❌ TTS 권한 없음: {e}")
-        return False
     except Exception as e:
         print(f"❌ TTS 오류: {e}")
         return False
 
-# Configure pydub to use ffmpeg
-current_dir = os.path.dirname(os.path.abspath(__file__))
-local_ffmpeg = os.path.join(current_dir, "ffmpeg.exe")
 
-if os.path.exists(local_ffmpeg):
-    # Local Windows environment with ffmpeg.exe
-    print(f"Using local FFmpeg: {local_ffmpeg}")
-    AudioSegment.converter = local_ffmpeg
-    AudioSegment.ffmpeg = local_ffmpeg
-    os.environ["PATH"] += os.pathsep + current_dir
-else:
-    # Cloud/Linux environment (ffmpeg installed via apt-get)
-    print("Using system FFmpeg (Cloud/Linux environment)")
+def generate_audio_segment(text, voice_name, output_file):
+    """
+    Sync wrapper for async TTS generation.
+    """
+    try:
+        # Clean up text
+        text = text.replace("*", "").strip()
+        if not text:
+            return False
 
-import re
+        # Use asyncio.run for cleaner event loop handling
+        async def _generate():
+            communicate = edge_tts.Communicate(text, voice_name, rate="+10%")
+            await communicate.save(output_file)
+            return True
+        
+        return asyncio.run(_generate())
+    except Exception as e:
+        print(f"❌ TTS 오류: {e}")
+        return False
+
 
 def create_podcast_audio(script_text, output_filename="podcast.mp3", title_text=None):
     """
@@ -95,7 +87,7 @@ def create_podcast_audio(script_text, output_filename="podcast.mp3", title_text=
     lines = script_text.split('\n')
     temp_files = []
     
-    print(f"오디오 생성 시작 (Google Cloud TTS): {output_filename}")
+    print(f"오디오 생성 시작 (Edge TTS - 무료): {output_filename}")
     
     try:
         # 1. Generate Title Audio (if title provided)
@@ -109,7 +101,7 @@ def create_podcast_audio(script_text, output_filename="podcast.mp3", title_text=
             if generate_audio_segment(intro_text, VOICE_ANNOUNCER, title_audio_file):
                 has_title = True
         
-        current_voice = VOICE_A # Default start
+        current_voice = VOICE_A  # Default start
         segment_index = 0  # 실제 생성된 세그먼트 번호용
         
         for i, line in enumerate(lines):
@@ -224,13 +216,15 @@ def create_podcast_audio(script_text, output_filename="podcast.mp3", title_text=
                 except Exception as e:
                     print(f"임시 파일 삭제 실패 ({temp_file}): {e}")
 
+
 def run_audio_generation(script, filename, title=None):
     return create_podcast_audio(script, filename, title)
+
 
 if __name__ == "__main__":
     # Test script
     test_script = """
-    상현: 안녕하세요, 구글 클라우드 TTS 테스트입니다.
-    지민: 와, 목소리가 훨씬 자연스러워졌네요!
+    상현: 안녕하세요, Edge TTS 테스트입니다. 완전 무료로 사용할 수 있어요!
+    지민: 와, 정말요? 음질도 상당히 좋네요!
     """
-    run_audio_generation(test_script, "test_google_tts.mp3")
+    run_audio_generation(test_script, "test_edge_tts.mp3")

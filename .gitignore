@@ -13,6 +13,16 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv/
+
+# 생성 결과물
+MP3/
+
+# 크롤러 로그
+crawler_log.txt
+
+# Google Cloud 인증 파일
+application_default_credentials.json
 
 # IDE 설정
 .vscode/
