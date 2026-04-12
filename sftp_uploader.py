@@ -70,7 +70,16 @@ def upload_file(local_path):
         try:
             client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(HOST, PORT, USERNAME, PASSWORD, timeout=30, banner_timeout=30)
+            # password 전용 인증으로 강제.
+            # paramiko 기본값(look_for_keys/allow_agent=True)으로 두면
+            # ~/.ssh 키나 agent 키를 먼저 시도하다가 서버의
+            # PubkeyAcceptedAlgorithms(ssh-rsa 제외) 정책에 막혀
+            # password fallback 없이 실패하는 문제가 있음.
+            client.connect(
+                HOST, PORT, USERNAME, PASSWORD,
+                timeout=30, banner_timeout=30,
+                allow_agent=False, look_for_keys=False,
+            )
             sftp = client.open_sftp()
 
             create_remote_dir(sftp, remote_folder)
