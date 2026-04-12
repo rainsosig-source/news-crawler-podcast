@@ -37,6 +37,15 @@ try:
     from podcast_audio import run_audio_generation
     from sftp_uploader import upload_file
     import db_manager
+
+    # 1차 본문 추출기: trafilatura (설치 안 돼 있어도 기존 로직으로 동작하도록 방어)
+    try:
+        import trafilatura
+        _TRAFILATURA_AVAILABLE = True
+    except ImportError:
+        _TRAFILATURA_AVAILABLE = False
+        _logger.warning("trafilatura 미설치 - 기존 셀렉터 로직만 사용")
+
     _logger.info("모든 모듈 import 성공")
 except Exception as e:
     _logger.error(f"모듈 import 실패: {e}")
@@ -335,8 +344,9 @@ def clean_article_text(text):
 def get_news_content(url):
     """
     Extract news article content with multi-layer fallback strategies.
-    
+
     전략 순서:
+    0. trafilatura (ML 기반 범용 추출기) — 커버리지가 가장 넓음
     1. 네이버 뉴스 전용 셀렉터 (최신 구조 반영)
     2. 주요 언론사별 맞춤 셀렉터
     3. 공통 뉴스 셀렉터
@@ -345,7 +355,27 @@ def get_news_content(url):
     6. meta description 폴백
     """
     extraction_log = []  # 디버깅용 로그
-    
+
+    # ===== Strategy 0: trafilatura (1차 추출기) =====
+    if _TRAFILATURA_AVAILABLE:
+        try:
+            downloaded = trafilatura.fetch_url(url)
+            if downloaded:
+                extracted = trafilatura.extract(
+                    downloaded,
+                    include_comments=False,
+                    include_tables=False,
+                    favor_precision=True,
+                )
+                if extracted:
+                    cleaned = clean_article_text(extracted)
+                    if validate_content(cleaned):
+                        print(f"  [추출] trafilatura")
+                        return cleaned
+                    extraction_log.append("✗ trafilatura 검증 실패 - 기존 로직으로 폴백")
+        except Exception as e:
+            extraction_log.append(f"✗ trafilatura 오류: {e}")
+
     try:
         headers = get_random_headers()
         response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
