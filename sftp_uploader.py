@@ -1,5 +1,6 @@
 import paramiko
 import os
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -59,33 +60,42 @@ def upload_file(local_path):
         pass
 
     remote_folder = f"{REMOTE_DIR}/{year}/{month}/{day}"
-    
-    try:
-        client = paramiko.SSHClient()
-        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(HOST, PORT, USERNAME, PASSWORD)
-        sftp = client.open_sftp()
-        
-        # Ensure remote directory exists
-        create_remote_dir(sftp, remote_folder)
-        
-        # Upload file
-        remote_path = f"{remote_folder}/{remote_filename}"
-        print(f"Uploading to {remote_path}...")
-        sftp.put(local_path, remote_path)
-        print("Upload successful.")
-        
-        # No need to update index.html anymore, Flask handles it dynamically.
-        
-        sftp.close()
-        client.close()
-        
-        print(f"Web Player Updated: {WEB_URL}")
-        return remote_path
-        
-    except Exception as e:
-        print(f"SFTP Upload Error: {e}")
-        return None
+    remote_path = f"{remote_folder}/{remote_filename}"
+
+    # 재시도: 최대 3회, 지수 백오프 (3s → 9s → 27s)
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        client = None
+        sftp = None
+        try:
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(HOST, PORT, USERNAME, PASSWORD, timeout=30, banner_timeout=30)
+            sftp = client.open_sftp()
+
+            create_remote_dir(sftp, remote_folder)
+
+            print(f"Uploading to {remote_path}... (시도 {attempt}/{max_attempts})")
+            sftp.put(local_path, remote_path)
+            print("Upload successful.")
+            print(f"Web Player Updated: {WEB_URL}")
+            return remote_path
+
+        except Exception as e:
+            print(f"SFTP Upload Error (시도 {attempt}/{max_attempts}): {e}")
+            if attempt < max_attempts:
+                backoff = 3 ** attempt
+                print(f"  {backoff}초 후 재시도...")
+                time.sleep(backoff)
+        finally:
+            try:
+                if sftp: sftp.close()
+                if client: client.close()
+            except Exception:
+                pass
+
+    print(f"❌ SFTP 업로드 최종 실패 ({max_attempts}회 시도)")
+    return None
 
 if __name__ == "__main__":
     # Test upload if run directly

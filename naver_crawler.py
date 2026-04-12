@@ -81,6 +81,41 @@ def signal_handler(signum, frame):
     print("\n⚠️ 종료 요청 감지. 현재 작업 완료 후 종료합니다...")
     _shutdown_requested = True
 
+
+def safe_remove(filepath, retries=3, delay=1.0):
+    """Windows Defender/ffmpeg 핸들 지연 대비 os.remove 재시도."""
+    if not os.path.exists(filepath):
+        return True
+    for attempt in range(1, retries + 1):
+        try:
+            os.remove(filepath)
+            return True
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(delay * attempt)
+            else:
+                print(f"[삭제 실패] {filepath}: {e}")
+                return False
+    return False
+
+
+def cleanup_stale_mp3(mp3_dir="MP3", age_hours=24):
+    """시작 시 MP3 폴더에서 age_hours 이상된 잔재 파일 제거."""
+    if not os.path.isdir(mp3_dir):
+        return
+    cutoff = time.time() - age_hours * 3600
+    removed = 0
+    for name in os.listdir(mp3_dir):
+        path = os.path.join(mp3_dir, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                if safe_remove(path):
+                    removed += 1
+        except Exception as e:
+            print(f"[정리 스킵] {path}: {e}")
+    if removed:
+        logger.info(f"🧹 오래된 MP3 {removed}개 정리 ({age_hours}시간 이상)")
+
 def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=3):
     # Encode the query for the URL
     encoded_query = urllib.parse.quote(query)
@@ -230,17 +265,13 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                             if remote_path:
                                 print(f"[DB 저장 중...] {title}")
                                 db_manager.insert_episode(press, title, link, remote_path, keyword_id=keyword_id)
-                                
-                                # Clean up local file after successful upload
-                                try:
-                                    os.remove(filename)
+
+                                if safe_remove(filename):
                                     print(f"[로컬 파일 삭제] {filename}")
-                                except Exception as e:
-                                    print(f"[로컬 파일 삭제 실패] {e}")
-                                
                                 stats['success'] += 1
                             else:
-                                print("[업로드 실패] 로컬 파일 유지")
+                                # 업로드 최종 실패: 다음 실행 때 cleanup_stale_mp3가 정리하도록 둠
+                                print("[업로드 실패] 로컬 파일 유지 (24h 후 자동 정리)")
                                 stats['failed'] += 1
                 else:
                     print("[본문 추출 실패 또는 AI 처리 건너뛰기]")
@@ -379,8 +410,11 @@ def get_news_content(url):
 
 
 def run_crawling_job():
+    # 이전 실행에서 업로드 실패로 남은 오래된 MP3 정리
+    cleanup_stale_mp3(mp3_dir="MP3", age_hours=24)
+
     keywords = db_manager.get_active_keywords()
-    
+
     if not keywords:
         print("활성화된 검색어가 없습니다. 기본값 '인공지능'으로 실행합니다.")
         crawl_naver_news("인공지능", use_ai=True, make_audio=True)
