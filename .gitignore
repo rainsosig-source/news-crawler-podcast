@@ -37,3 +37,4 @@ logs.json
 # OS 파일
 .DS_Store
 Thumbs.db
+logs/

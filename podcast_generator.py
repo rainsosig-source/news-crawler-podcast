@@ -1,8 +1,23 @@
 import os
+import subprocess
 import requests
 import json
 from dotenv import load_dotenv
 import time
+
+
+def call_claude_cli(prompt, model="sonnet", timeout=300):
+    """Claude Code CLI로 대본 생성 (OAuth/Claude Max 구독 사용)."""
+    result = subprocess.run(
+        ["claude", "-p", "--model", model],
+        input=prompt,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+    if result.returncode != 0:
+        raise Exception(f"claude CLI 실패 (rc={result.returncode}): {result.stderr.strip()}")
+    return result.stdout
 
 # Load environment variables
 load_dotenv()
@@ -107,10 +122,15 @@ def validate_script(script_text):
     return True, ""
 
 
-def generate_podcast_script(news_title, news_content, requirements=None, model="gemma-3-27b-it", max_retries=2):
+def generate_podcast_script(news_title, news_content, requirements=None, model=None, max_retries=2, backend=None):
     """
-    Generates a podcast script from news content using Gemini API (Flash model).
+    Generates a podcast script from news content.
+    backend: "claude" (Claude Code CLI) or "gemini" (REST API). 기본값은 PODCAST_BACKEND 환경변수, 없으면 "gemini".
     """
+    if backend is None:
+        backend = os.getenv("PODCAST_BACKEND", "gemini")
+    if model is None:
+        model = "sonnet" if backend == "claude" else "gemma-3-27b-it"
     # Truncate content to fit within model's context window
     optimized_content = truncate_content_smart(news_content, max_chars=15000)
     
@@ -173,26 +193,27 @@ def generate_podcast_script(news_title, news_content, requirements=None, model="
     6. **사실 충실성 (가장 중요)**: 위 [기사 정보] 본문에 명시되지 않은 사실, 수치, 인용, 인물 발언, 통계, 날짜를 절대로 만들어내지 마세요. 추측·일반론·"~라고 알려져 있다" 같은 출처 불명 진술도 금지. 본문에 없는 배경지식이 필요하면 "이 기사에서는 자세한 내용은 다루지 않지만" 같은 표현으로 명확히 구분하세요.
     """
     
-    # Gemini API Only (REST API 직접 호출)
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
+    api_key = os.getenv("GEMINI_API_KEY") if backend == "gemini" else None
+    if backend == "gemini" and not api_key:
         return "❌ 오류: .env 파일에 GEMINI_API_KEY가 설정되지 않았습니다."
 
     # 재시도 루프
     for attempt in range(max_retries + 1):
         try:
             start_time = time.time()
-            print(f"🤖 Gemini API ({model})로 대본 생성 중... (시도 {attempt + 1}/{max_retries + 1})")
-            
-            # REST API 직접 호출 (Cloud Run ADC 충돌 방지)
-            raw_script = call_gemini_rest_api(prompt, model=model, api_key=api_key)
+            print(f"🤖 {backend} ({model})로 대본 생성 중... (시도 {attempt + 1}/{max_retries + 1})")
+
+            if backend == "claude":
+                raw_script = call_claude_cli(prompt, model=model)
+            else:
+                raw_script = call_gemini_rest_api(prompt, model=model, api_key=api_key)
             elapsed_time = time.time() - start_time
-            
+
             print(f"✅ 생성 완료! (소요 시간: {elapsed_time:.2f}초)")
-            
-            # Rate limit 보호: API 호출 후 7초 대기
-            print("⏳ API Rate Limit 보호를 위해 7초 대기 중...")
-            time.sleep(7)
+
+            if backend == "gemini":
+                print("⏳ API Rate Limit 보호를 위해 7초 대기 중...")
+                time.sleep(7)
             
             # 대본 정제 및 검증
             script = clean_script_output(raw_script)
@@ -212,17 +233,23 @@ def generate_podcast_script(news_title, news_content, requirements=None, model="
                     time.sleep(1)
                     continue
                 else:
+                    if backend == "claude":
+                        print("↩️ Claude 검증 실패 누적. Gemini로 폴백합니다.")
+                        return generate_podcast_script(news_title, news_content, requirements=requirements, max_retries=max_retries, backend="gemini")
                     print("⚠️ 최대 재시도 횟수 도달. 검증되지 않은 대본 반환.")
                     return script
             
         except Exception as e:
-            print(f"❌ Gemini API 오류 (시도 {attempt + 1}): {e}")
+            print(f"❌ {backend} 오류 (시도 {attempt + 1}): {e}")
             if attempt < max_retries:
                 print(f"재시도 중... ({attempt + 1}/{max_retries}) - 30초 후 재시도")
                 time.sleep(30)  # Rate limit 회복을 위해 30초 대기
                 continue
             else:
-                return f"⚠️ Gemini API 오류 발생: {e}"
+                if backend == "claude":
+                    print("↩️ Claude 호출 실패 누적. Gemini로 폴백합니다.")
+                    return generate_podcast_script(news_title, news_content, requirements=requirements, max_retries=max_retries, backend="gemini")
+                return f"⚠️ {backend} 오류 발생: {e}"
 
 
 def clean_script_output(text):
