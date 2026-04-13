@@ -12,6 +12,7 @@ HOST = os.getenv("SFTP_HOST", "")
 PORT = int(os.getenv("SFTP_PORT", "22"))
 USERNAME = os.getenv("SFTP_USER", "")
 PASSWORD = os.getenv("SFTP_PASSWORD", "")
+KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
 # Flask static folder
 REMOTE_DIR = "/root/flask-app/static/podcast" 
 WEB_URL = "https://sosig.shop/podcast"
@@ -75,11 +76,19 @@ def upload_file(local_path):
             # ~/.ssh 키나 agent 키를 먼저 시도하다가 서버의
             # PubkeyAcceptedAlgorithms(ssh-rsa 제외) 정책에 막혀
             # password fallback 없이 실패하는 문제가 있음.
-            client.connect(
-                HOST, PORT, USERNAME, PASSWORD,
-                timeout=30, banner_timeout=30,
-                allow_agent=False, look_for_keys=False,
-            )
+            if KEY_FILE and os.path.exists(KEY_FILE):
+                client.connect(
+                    HOST, PORT, USERNAME,
+                    key_filename=KEY_FILE,
+                    timeout=30, banner_timeout=30,
+                    allow_agent=False, look_for_keys=False,
+                )
+            else:
+                client.connect(
+                    HOST, PORT, USERNAME, PASSWORD,
+                    timeout=30, banner_timeout=30,
+                    allow_agent=False, look_for_keys=False,
+                )
             sftp = client.open_sftp()
 
             create_remote_dir(sftp, remote_folder)

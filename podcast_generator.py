@@ -95,8 +95,8 @@ def validate_script(script_text):
         if line.strip().startswith('상현:') or line.strip().startswith('지민:'):
             dialogue_count += 1
     
-    if dialogue_count < 6:  # 최소 6개 대화 (각자 3번씩)
-        return False, f"대화 수가 부족합니다 ({dialogue_count}개, 최소 6개 필요)"
+    if dialogue_count < 10:  # 최소 10개 대화 (프롬프트는 12-15회 요구)
+        return False, f"대화 수가 부족합니다 ({dialogue_count}개, 최소 10개 필요)"
     
     # 금지된 특수문자 확인
     forbidden_chars = ['*', '#', '^', '~', '`']
@@ -169,7 +169,8 @@ def generate_podcast_script(news_title, news_content, requirements=None, model="
     2. **형식**: 반드시 상현: 대사, 지민: 대사 형태로만 작성하세요. 지문, 해설, 괄호 설명 절대 금지.
     3. **길이**: 대화 교환은 최소 12-15회 이상으로 작성하세요. 너무 짧으면 안 됩니다.
     4. **특수문자**: 대사 속에 별표, 샵, 하이픈 같은 특수문자를 절대 넣지 마세요.
-    5. **순수 대본만 출력**: 프롬프트 내용이나 지시사항을 대본에 포함하지 마세요. 오직 대화 내용만 출력하세요.    
+    5. **순수 대본만 출력**: 프롬프트 내용이나 지시사항을 대본에 포함하지 마세요. 오직 대화 내용만 출력하세요.
+    6. **사실 충실성 (가장 중요)**: 위 [기사 정보] 본문에 명시되지 않은 사실, 수치, 인용, 인물 발언, 통계, 날짜를 절대로 만들어내지 마세요. 추측·일반론·"~라고 알려져 있다" 같은 출처 불명 진술도 금지. 본문에 없는 배경지식이 필요하면 "이 기사에서는 자세한 내용은 다루지 않지만" 같은 표현으로 명확히 구분하세요.
     """
     
     # Gemini API Only (REST API 직접 호출)
