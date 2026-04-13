@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e
+export PATH="/home/sddari/.local/bin:/usr/local/bin:/usr/bin:/bin"
 PROJECT=/mnt/nas/data2/news
 VENV=/home/sddari/news_runtime/.venv
 LOG_DIR=$PROJECT/logs
