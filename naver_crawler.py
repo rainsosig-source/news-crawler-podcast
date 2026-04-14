@@ -2,17 +2,21 @@
 import os
 import sys
 import logging
+from logging.handlers import RotatingFileHandler
 
 # 스크립트 위치 기준으로 로그 파일 경로 설정
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _LOG_FILE = os.path.join(_SCRIPT_DIR, "crawler_log.txt")
 
 # 기본 로깅 설정 (import 전에 설정)
+# 10MB × 10개 회전 (최대 ~100MB 보관)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(_LOG_FILE, encoding='utf-8'),
+        RotatingFileHandler(
+            _LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=10, encoding='utf-8'
+        ),
         logging.StreamHandler(sys.stdout)
     ]
 )

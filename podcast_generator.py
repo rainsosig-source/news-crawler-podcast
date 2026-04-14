@@ -29,10 +29,12 @@ def call_gemini_rest_api(prompt, model="gemma-3-27b-it", api_key=None):
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY")
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    
+    # 키를 URL 쿼리스트링 대신 헤더로 전달 — 예외/로그에 키 유출 방지
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
     headers = {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-goog-api-key": api_key or "",
     }
     
     data = {
@@ -120,6 +122,32 @@ def validate_script(script_text):
             return False, f"금지된 특수문자 발견: {char}"
     
     return True, ""
+
+
+def check_hallucinated_numbers(script_text, source_text):
+    """
+    대본에 등장한 숫자 토큰이 원문(제목+본문)에 없으면 환각 의심으로 경고만 반환.
+    비차단(non-blocking): 리스트를 리턴하고 호출부에서 로깅.
+    """
+    import re
+    # 숫자(소수/콤마 포함) + 선택적 한국어 단위
+    pattern = re.compile(r"\d[\d,\.]*\s*(?:%|퍼센트|억|만|조|천|백|원|달러|명|건|회|개|년|월|일|시|분)?")
+    def _norm(s):
+        return s.replace(",", "").replace(" ", "")
+    src_tokens = {_norm(m) for m in pattern.findall(source_text or "")}
+    suspects = []
+    for line in script_text.split("\n"):
+        line = line.strip()
+        if not (line.startswith("상현:") or line.startswith("지민:")):
+            continue
+        for m in pattern.findall(line):
+            nm = _norm(m)
+            # 단순 한자리 숫자(1~9)나 "1회" 등 너무 일반적인 건 스킵
+            if len(nm) <= 1:
+                continue
+            if nm not in src_tokens:
+                suspects.append(m.strip())
+    return suspects
 
 
 def generate_podcast_script(news_title, news_content, requirements=None, model=None, max_retries=2, backend=None):
@@ -225,6 +253,14 @@ def generate_podcast_script(news_title, news_content, requirements=None, model=N
             
             if is_valid:
                 print("✅ 대본 검증 통과")
+                # 환각 가드: 본문에 없는 숫자 토큰 경고(비차단)
+                try:
+                    suspects = check_hallucinated_numbers(script, f"{news_title}\n{news_content}")
+                    if suspects:
+                        uniq = list(dict.fromkeys(suspects))[:10]
+                        print(f"⚠️ 환각 의심 숫자 토큰(본문 미포함): {uniq}")
+                except Exception as e:
+                    print(f"환각 가드 실행 중 오류(무시): {e}")
                 return script
             else:
                 print(f"⚠️ 대본 검증 실패: {error_msg}")

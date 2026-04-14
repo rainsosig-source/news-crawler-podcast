@@ -11,28 +11,29 @@ VOICE_B = "ko-KR-SunHiNeural"            # Female, Host B (지민) - Soft & Clea
 VOICE_ANNOUNCER = "ko-KR-HyunsuMultilingualNeural"  # Male, Title Announcer
 
 # ===== FFmpeg 경로 설정 =====
-# SYSTEM 계정 스케줄러에서는 사용자 PATH를 상속받지 않으므로 절대 경로 필요
-# 아래 경로를 실제 ffmpeg.exe 위치로 수정하세요
-FFMPEG_SYSTEM_PATH = r"C:\ffmpeg\bin\ffmpeg.exe"  # TODO: 실제 경로로 수정
+# 우선순위: FFMPEG_PATH 환경변수 > 프로젝트 로컬 ffmpeg(.exe) > 시스템 PATH
+import platform
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
-local_ffmpeg = os.path.join(current_dir, "ffmpeg.exe")
+_env_ffmpeg = os.getenv("FFMPEG_PATH", "")
+_local_candidates = [
+    os.path.join(current_dir, "ffmpeg"),
+    os.path.join(current_dir, "ffmpeg.exe"),
+]
+_local_ffmpeg = next((p for p in _local_candidates if os.path.exists(p)), None)
 
-if os.path.exists(local_ffmpeg):
-    # 프로젝트 폴더에 ffmpeg.exe가 있는 경우
-    print(f"Using local FFmpeg: {local_ffmpeg}")
-    AudioSegment.converter = local_ffmpeg
-    AudioSegment.ffmpeg = local_ffmpeg
+if _env_ffmpeg and os.path.exists(_env_ffmpeg):
+    print(f"Using FFmpeg from FFMPEG_PATH: {_env_ffmpeg}")
+    AudioSegment.converter = _env_ffmpeg
+    AudioSegment.ffmpeg = _env_ffmpeg
+    os.environ["PATH"] += os.pathsep + os.path.dirname(_env_ffmpeg)
+elif _local_ffmpeg:
+    print(f"Using local FFmpeg: {_local_ffmpeg}")
+    AudioSegment.converter = _local_ffmpeg
+    AudioSegment.ffmpeg = _local_ffmpeg
     os.environ["PATH"] += os.pathsep + current_dir
-elif os.path.exists(FFMPEG_SYSTEM_PATH):
-    # 시스템에 설치된 ffmpeg 사용 (스케줄러 SYSTEM 계정용)
-    print(f"Using system FFmpeg: {FFMPEG_SYSTEM_PATH}")
-    AudioSegment.converter = FFMPEG_SYSTEM_PATH
-    AudioSegment.ffmpeg = FFMPEG_SYSTEM_PATH
-    os.environ["PATH"] += os.pathsep + os.path.dirname(FFMPEG_SYSTEM_PATH)
 else:
-    # Cloud/Linux 환경 또는 PATH에서 ffmpeg 찾기
-    print("Using system FFmpeg (from PATH or Cloud/Linux environment)")
+    print(f"Using system FFmpeg from PATH ({platform.system()})")
 
 
 async def generate_audio_segment_async(text, voice_name, output_file):

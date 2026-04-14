@@ -1,11 +1,14 @@
 import paramiko
 import os
 import time
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 # Server Configuration (from environment variables)
 HOST = os.getenv("SFTP_HOST", "")
@@ -13,9 +16,9 @@ PORT = int(os.getenv("SFTP_PORT", "22"))
 USERNAME = os.getenv("SFTP_USER", "")
 PASSWORD = os.getenv("SFTP_PASSWORD", "")
 KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
-# Flask static folder
-REMOTE_DIR = "/root/flask-app/static/podcast" 
-WEB_URL = "https://sosig.shop/podcast"
+# Flask static folder (override via SFTP_REMOTE_DIR)
+REMOTE_DIR = os.getenv("SFTP_REMOTE_DIR", "/root/flask-app/static/podcast")
+WEB_URL = os.getenv("PODCAST_WEB_URL", "https://sosig.shop/podcast")
 
 def create_remote_dir(sftp, path):
     """Recursively creates remote directories."""
@@ -27,10 +30,14 @@ def create_remote_dir(sftp, path):
         try:
             sftp.stat(current_path)
         except FileNotFoundError:
-            # print(f"Creating remote directory: {current_path}")
             try:
                 sftp.mkdir(current_path)
-            except: pass
+            except IOError as e:
+                # 동시 생성 레이스 조건 등: 존재하면 OK, 그 외는 경고
+                try:
+                    sftp.stat(current_path)
+                except Exception:
+                    logger.warning(f"SFTP mkdir 실패: {current_path} - {e}")
 
 def upload_file(local_path):
     """Uploads a file to the Flask server's static folder."""
@@ -57,8 +64,8 @@ def upload_file(local_path):
         idx = local_path.split("_")[-1].replace(".mp3", "")
         if idx.isdigit():
             remote_filename = f"{time_str}_{idx}.mp3"
-    except:
-        pass
+    except (AttributeError, IndexError) as e:
+        logger.debug(f"파일명 인덱스 파싱 생략: {local_path} - {e}")
 
     remote_folder = f"{REMOTE_DIR}/{year}/{month}/{day}"
     remote_path = f"{remote_folder}/{remote_filename}"
@@ -109,8 +116,8 @@ def upload_file(local_path):
             try:
                 if sftp: sftp.close()
                 if client: client.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug(f"SFTP 연결 정리 중 무시된 오류: {e}")
 
     print(f"❌ SFTP 업로드 최종 실패 ({max_attempts}회 시도)")
     return None

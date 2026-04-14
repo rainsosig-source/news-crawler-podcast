@@ -3,8 +3,26 @@ set -e
 export PATH="/home/sddari/.local/bin:/usr/local/bin:/usr/bin:/bin"
 PROJECT=/mnt/nas/data2/news
 VENV=/home/sddari/news_runtime/.venv
+
+# 중복 실행 방지: 이미 실행 중이면 즉시 종료
+LOCKFILE=/tmp/sosig_news_run.lock
+exec 200>"$LOCKFILE"
+if ! flock -n 200; then
+    echo "[run.sh] 이미 실행 중 — 이번 실행 스킵 ($(date '+%F %T'))" >&2
+    exit 0
+fi
+
+# 비밀 변수는 NAS가 아닌 로컬(600 권한)에서 로드
+DOTENV=/home/sddari/.config/sosig/.env
+if [ -f "$DOTENV" ]; then
+    set -a
+    . "$DOTENV"
+    set +a
+fi
 LOG_DIR=$PROJECT/logs
 mkdir -p "$LOG_DIR"
+# 14일 이상 된 실행 로그 정리
+find "$LOG_DIR" -maxdepth 1 -name 'run_*.log' -type f -mtime +14 -delete 2>/dev/null || true
 LOG="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
 
 cd "$PROJECT"
