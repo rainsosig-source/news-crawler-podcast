@@ -47,7 +47,7 @@ async def generate_audio_segment_async(text, voice_name, output_file):
             return False
 
         # Create TTS communicate object
-        communicate = edge_tts.Communicate(text, voice_name, rate="+10%")
+        communicate = edge_tts.Communicate(text, voice_name, rate="+15%")
         
         # Save to file
         await communicate.save(output_file)
@@ -71,7 +71,7 @@ def generate_audio_segment(text, voice_name, output_file):
 
         # Use asyncio.run for cleaner event loop handling
         async def _generate():
-            communicate = edge_tts.Communicate(text, voice_name, rate="+10%")
+            communicate = edge_tts.Communicate(text, voice_name, rate="+15%")
             await communicate.save(output_file)
             return True
         
