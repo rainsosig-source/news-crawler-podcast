@@ -4,9 +4,22 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import time
+import hashlib
 
 import os
 from dotenv import load_dotenv
+
+STATIC_PREFIX = "/root/flask-app/static/"
+
+
+def compute_title_hash(title):
+    return hashlib.sha256((title or "").encode("utf-8")).hexdigest()
+
+
+def normalize_mp3_path(mp3_path):
+    if mp3_path and mp3_path.startswith(STATIC_PREFIX):
+        return mp3_path[len(STATIC_PREFIX):]
+    return mp3_path
 
 # Load environment variables
 load_dotenv()
@@ -96,60 +109,84 @@ def get_connection():
         send_db_error_alert(error_msg)
         raise
 
+def _try_alter(cursor, sql, label):
+    try:
+        cursor.execute(sql)
+        print(f"[migrate] {label}")
+    except pymysql.err.OperationalError:
+        pass
+
+
 def init_db():
     """Initialize the database table if it doesn't exist."""
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
-            # Create episodes table with keyword_id
             sql = """
             CREATE TABLE IF NOT EXISTS episodes (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 press VARCHAR(100),
                 title VARCHAR(255),
-                link TEXT,
+                title_hash CHAR(64),
+                link VARCHAR(500) NOT NULL,
                 mp3_path VARCHAR(255),
+                duration_sec INT UNSIGNED,
+                summary VARCHAR(280),
                 keyword_id INT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                INDEX idx_keyword (keyword_id),
-                INDEX idx_created (created_at)
+                UNIQUE KEY uk_link (link),
+                INDEX idx_keyword_created (keyword_id, created_at),
+                INDEX idx_title_hash_created (title_hash, created_at),
+                INDEX idx_created_at (created_at),
+                FULLTEXT KEY ft_title (title)
             )
             """
             cursor.execute(sql)
-            
-            # Add keyword_id column if it doesn't exist (for existing tables)
-            try:
-                cursor.execute("ALTER TABLE episodes ADD COLUMN keyword_id INT")
-                cursor.execute("ALTER TABLE episodes ADD INDEX idx_keyword (keyword_id)")
-                print("Added keyword_id column to existing episodes table.")
-            except pymysql.err.OperationalError:
-                pass  # Column already exists (expected)
-            
-            # Add topic column to keywords table if it doesn't exist
-            try:
-                cursor.execute("ALTER TABLE keywords ADD COLUMN topic VARCHAR(100)")
-                print("Added topic column to keywords table.")
-                
-                # Migration: Copy existing keyword values to topic where topic is NULL
-                cursor.execute("UPDATE keywords SET topic = keyword WHERE topic IS NULL")
-                print("Migrated existing keywords to topic field.")
-            except pymysql.err.OperationalError:
-                pass  # Column already exists (expected)
-                
+
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN keyword_id INT",
+                       "add keyword_id")
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN title_hash CHAR(64) AFTER title",
+                       "add title_hash")
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN duration_sec INT UNSIGNED AFTER mp3_path",
+                       "add duration_sec")
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN summary VARCHAR(280) AFTER duration_sec",
+                       "add summary")
+            _try_alter(cursor, "ALTER TABLE episodes MODIFY COLUMN link VARCHAR(500) NOT NULL",
+                       "link → VARCHAR(500) NOT NULL")
+            _try_alter(cursor, "ALTER TABLE episodes ADD UNIQUE KEY uk_link (link)",
+                       "unique(link)")
+            _try_alter(cursor, "ALTER TABLE episodes ADD INDEX idx_title_hash_created (title_hash, created_at)",
+                       "index(title_hash, created_at)")
+            _try_alter(cursor, "ALTER TABLE episodes ADD FULLTEXT KEY ft_title (title)",
+                       "fulltext(title)")
+
+            _try_alter(cursor, "ALTER TABLE keywords ADD COLUMN topic VARCHAR(100)",
+                       "add keywords.topic")
+            cursor.execute("UPDATE keywords SET topic = keyword WHERE topic IS NULL")
+
         conn.commit()
         print("Database table 'episodes' checked/created.")
     finally:
         conn.close()
 
-def insert_episode(press, title, link, mp3_path, keyword_id=None):
+def insert_episode(press, title, link, mp3_path, keyword_id=None,
+                   duration_sec=None, summary=None):
     """Insert a new episode record."""
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
-            sql = "INSERT INTO episodes (press, title, link, mp3_path, keyword_id) VALUES (%s, %s, %s, %s, %s)"
-            cursor.execute(sql, (press, title, link, mp3_path, keyword_id))
+            sql = ("INSERT INTO episodes "
+                   "(press, title, title_hash, link, mp3_path, duration_sec, summary, keyword_id) "
+                   "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)")
+            cursor.execute(sql, (
+                press, title, compute_title_hash(title), link,
+                normalize_mp3_path(mp3_path), duration_sec, summary, keyword_id,
+            ))
         conn.commit()
         print(f"DB Logged: {title}")
+    except pymysql.err.IntegrityError as e:
+        # UNIQUE(link) 충돌 → 조용히 스킵
+        print(f"DB Skip (duplicate link): {title}")
     except Exception as e:
         print(f"DB Error: {e}")
     finally:
@@ -160,13 +197,28 @@ def is_duplicate_news(link):
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
-            sql = "SELECT COUNT(*) as cnt FROM episodes WHERE link = %s"
+            sql = "SELECT 1 FROM episodes WHERE link = %s LIMIT 1"
             cursor.execute(sql, (link,))
-            result = cursor.fetchone()
-            return result['cnt'] > 0
+            return cursor.fetchone() is not None
     except Exception as e:
         print(f"DB Error (is_duplicate_news): {e}")
         return False  # If error, allow processing
+    finally:
+        conn.close()
+
+def is_duplicate_title_recent(title, days=7):
+    """최근 N일 내 동일 제목 에피소드 존재 여부 (Claude/TTS 재비용 방지)."""
+    conn = get_connection()
+    try:
+        with conn.cursor() as cursor:
+            sql = ("SELECT 1 FROM episodes "
+                   "WHERE title_hash = %s AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY) "
+                   "LIMIT 1")
+            cursor.execute(sql, (compute_title_hash(title), days))
+            return cursor.fetchone() is not None
+    except Exception as e:
+        print(f"DB Error (is_duplicate_title_recent): {e}")
+        return False
     finally:
         conn.close()
 

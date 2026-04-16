@@ -59,6 +59,24 @@ except Exception as e:
 
 logger = _logger  # 기존 코드 호환성
 
+
+def _measure_mp3_duration(path):
+    """MP3 파일 재생 길이를 초 단위로 반환. 실패 시 None."""
+    try:
+        from pydub import AudioSegment
+        return int(len(AudioSegment.from_mp3(path)) / 1000)
+    except Exception as e:
+        logger.warning(f"duration 측정 실패 ({path}): {e}")
+        return None
+
+
+def _build_summary(content, limit=280):
+    """기사 본문에서 공백 정규화한 선두 N자 요약 추출."""
+    if not content:
+        return None
+    cleaned = re.sub(r"\s+", " ", content).strip()
+    return cleaned[:limit] if cleaned else None
+
 # User-Agent 목록 (랜덤 선택으로 차단 방지)
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -189,6 +207,10 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                     print(f"[중복 건너뛰기] {title}")
                     stats['duplicate'] += 1
                     continue
+                if title and db_manager.is_duplicate_title_recent(title, days=7):
+                    print(f"[제목중복 건너뛰기] {title}")
+                    stats['duplicate'] += 1
+                    continue
                 
                 
                 # Press (closest preceding press element) with fallback
@@ -267,8 +289,15 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                             remote_path = upload_file(filename)
                             
                             if remote_path:
+                                duration_sec = _measure_mp3_duration(filename)
+                                summary = _build_summary(content)
                                 print(f"[DB 저장 중...] {title}")
-                                db_manager.insert_episode(press, title, link, remote_path, keyword_id=keyword_id)
+                                db_manager.insert_episode(
+                                    press, title, link, remote_path,
+                                    keyword_id=keyword_id,
+                                    duration_sec=duration_sec,
+                                    summary=summary,
+                                )
 
                                 if safe_remove(filename):
                                     print(f"[로컬 파일 삭제] {filename}")
