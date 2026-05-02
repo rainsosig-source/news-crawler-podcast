@@ -7,6 +7,5 @@ pymysql==1.1.0
 paramiko==3.4.0
 pydub==0.25.1
 edge-tts==7.2.7
-google-generativeai==0.8.3
 cryptography==44.0.0
 trafilatura==1.12.2
