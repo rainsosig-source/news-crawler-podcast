@@ -12,6 +12,7 @@ SFTP_HOST = os.getenv("SFTP_HOST", "")
 SFTP_PORT = int(os.getenv("SFTP_PORT", "22"))
 SFTP_USER = os.getenv("SFTP_USER", "")
 SFTP_PASSWORD = os.getenv("SFTP_PASSWORD", "")
+SFTP_KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
 SFTP_REMOTE_DIR = "/root/flask-app/static/podcast"
 
 ssh = paramiko.SSHClient()
@@ -21,8 +22,13 @@ try:
     print("=" * 70)
     print("📊 sosig.shop 스토리지 용량 분석")
     print("=" * 70)
-    
-    ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD)
+
+    if SFTP_KEY_FILE and os.path.exists(SFTP_KEY_FILE):
+        ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER,
+                    key_filename=SFTP_KEY_FILE,
+                    allow_agent=False, look_for_keys=False)
+    else:
+        ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD)
     sftp = ssh.open_sftp()
     
     # 1. 디스크 용량 확인

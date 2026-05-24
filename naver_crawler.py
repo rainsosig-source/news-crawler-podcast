@@ -70,12 +70,107 @@ def _measure_mp3_duration(path):
         return None
 
 
+_SUMMARY_NOISE_PATTERNS = [
+    r"기사 본문 영역\s*",
+    r"읽어주기 기능은.*?있습니다\.?",
+    r"읽어주기 기능",
+    r"기사 스크랩\s*-?\s*",
+    r"클린\s*뷰\s*-?\s*",
+    r"프린트\s*-?\s*",
+    r"공유\s*-?\s*",
+    r"댓글\s*-?\s*",
+    r"글자 크기(\s*(조절|설정))?\s*",
+    r"자동\s*재생",
+    r"(좋아요|슬퍼요|화나요|추천해요|응원해요)\s*\d*",
+    r"입력\s*\d{4}[\.\-/]\d{1,2}[\.\-/]\d{1,2}\s*\d{1,2}:\d{2}",
+    r"수정\s*\d{4}[\.\-/]\d{1,2}[\.\-/]\d{1,2}\s*\d{1,2}:\d{2}",
+    r"^\s*-\s*",  # 선두 대시
+]
+
+
 def _build_summary(content, limit=280):
-    """기사 본문에서 공백 정규화한 선두 N자 요약 추출."""
+    """기사 본문에서 UI 노이즈 제거 후 선두 N자 요약 추출."""
     if not content:
         return None
-    cleaned = re.sub(r"\s+", " ", content).strip()
+    cleaned = content
+    for p in _SUMMARY_NOISE_PATTERNS:
+        cleaned = re.sub(p, " ", cleaned, flags=re.IGNORECASE)
+    # 연속 구분자(대시·중점·파이프 등) 정리
+    cleaned = re.sub(r"(\s*[\-·∙•\|]\s*){2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    # 선두가 구분자·기호로 시작하면 제거
+    cleaned = re.sub(r"^[\s\-·∙•\|]+", "", cleaned).strip()
     return cleaned[:limit] if cleaned else None
+
+
+# ============================================================================
+# LLM 2차 판별 — Claude Haiku로 "키워드 실제 해당 여부" 빠른 Y/N
+# ============================================================================
+import subprocess as _subprocess
+
+
+def _is_article_relevant(title: str, content: str, keyword: str,
+                          timeout: int = 20) -> bool:
+    """본문이 키워드 주제에 실질적으로 해당하는지 LLM 판별.
+    실패 시 True(통과)로 보수적 동작 — 크롤링 중단 방지.
+    """
+    if not content or len(content) < 50:
+        return False
+    # 키워드별 판별 가이드 (경제는 정치/선거/인물 기사 제외)
+    guide = {
+        "경제": (
+            "경제 주제(금리·물가·환율·부동산·대출·고용·무역·기업실적·시장·투자 등)가 "
+            "기사의 주된 내용이면 YES. 정치/선거/인물 동향·사건사고·연예·스포츠 "
+            "중심이면 경제 언급이 있어도 NO. 단순 '경제' 단어가 나왔다고 YES 아님."
+        ),
+        "인공지능": (
+            "다음 중 하나면 YES:\n"
+            "- AI/머신러닝/LLM/생성형 모델·기술·논문\n"
+            "- AI 제품·서비스 출시, 사용자 경험 소개\n"
+            "- 기업의 AI 도입·활용 사례, AI 기반 제품 발표 (예: 'AI 트랙터 출시')\n"
+            "- AI 정책·투자·규제 관련 기사\n"
+            "다음은 NO: 단지 AI 단어만 1~2번 스쳐가고 주된 내용은 다른 주제(정치·경제 지표·사건사고)인 기사."
+        ),
+        "IT": (
+            "IT/소프트웨어/인터넷 산업이 기사의 주된 내용이면 YES: 플랫폼·앱·서비스·클라우드·"
+            "사이버보안·통신·디바이스·게임, IT기업의 제품/기술/사업 동향. "
+            "NO: AI가 주된 내용이면(→인공지능 키워드 담당), 단순 IT기업 주가·인사·정치·사건사고 중심이면 NO."
+        ),
+        "반도체": (
+            "반도체가 기사의 주된 내용이면 YES: 메모리·파운드리·공정·장비·소재, "
+            "삼성전자/SK하이닉스/TSMC/엔비디아 등의 반도체 사업·기술·시장·수출·투자. "
+            "NO: 반도체 종목의 단순 주가 등락만 다루면(→증시), 정치·일반 경제지표 중심이면 NO."
+        ),
+        "증시": (
+            "증시가 주된 내용이면 YES: 코스피·코스닥·주가지수·종목 시황·수급(외국인/기관 매매)·"
+            "기업 실적 기반 주가·공모/IPO. "
+            "NO: 거시 경제지표·금리·환율 중심이면(→경제), 부동산·정치 중심이면 NO."
+        ),
+    }.get(keyword, f"'{keyword}' 주제에 실질적으로 해당하면 YES, 아니면 NO.")
+
+    prompt = (
+        f"다음 기사가 '{keyword}' 주제에 실제 해당하는지 판단하세요.\n\n"
+        f"{guide}\n\n"
+        f"제목: {title}\n"
+        f"본문 일부:\n{content[:600]}\n\n"
+        "답은 반드시 'YES' 또는 'NO' 한 단어만 출력."
+    )
+
+    try:
+        import sys as _sys_local
+        if "/home/sddari/scripts" not in _sys_local.path:
+            _sys_local.path.insert(0, "/home/sddari/scripts")
+        import vllm_client
+        answer = (vllm_client.chat(user=prompt, timeout=timeout) or "").strip().upper()
+        first = answer.split("\n", 1)[0] if answer else ""
+        if first.startswith("YES"):
+            return True
+        if first.startswith("NO"):
+            return False
+        return "YES" in answer and "NO" not in answer
+    except Exception as e:
+        print(f"  [판별 실패 — 통과 처리] {e}")
+        return True
 
 # User-Agent 목록 (랜덤 선택으로 차단 방지)
 USER_AGENTS = [
@@ -138,7 +233,7 @@ def cleanup_stale_mp3(mp3_dir="MP3", age_hours=24):
     if removed:
         logger.info(f"🧹 오래된 MP3 {removed}개 정리 ({age_hours}시간 이상)")
 
-def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=3):
+def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=4):
     # Encode the query for the URL
     encoded_query = urllib.parse.quote(query)
     
@@ -207,7 +302,7 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                     print(f"[중복 건너뛰기] {title}")
                     stats['duplicate'] += 1
                     continue
-                if title and db_manager.is_duplicate_title_recent(title, days=7):
+                if title and db_manager.is_duplicate_title_recent(title, days=4):
                     print(f"[제목중복 건너뛰기] {title}")
                     stats['duplicate'] += 1
                     continue
@@ -242,23 +337,49 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                     # print(f"본문:\n{content}") # Too verbose
                 
                 if use_ai and content and "본문 내용을 추출할 수 없습니다" not in content:
+                    # LLM 2차 판별 — 본문이 키워드 주제에 실제 해당하는지
+                    if not _is_article_relevant(title, content, query):
+                        print(f"[키워드 부적합 판정] '{query}' 주제 아님 → 건너뜀")
+                        stats['failed'] += 1
+                        print("-" * 50)
+                        continue
                     print("\n[AI 팟캐스트 대본 생성 중...]")
                     script = generate_podcast_script(title, content, requirements=requirements)
                     print(f"--- 팟캐스트 대본 ---\n{script[:200]}...\n---------------------")
-                    
+
+                    # 카테고리별 음성/화자 페어 결정 (인공지능=재현·소은, 경제=상현·지민 등)
+                    import sys as _sys
+                    _sys.path.insert(0, "/home/sddari/scripts")
+                    try:
+                        from podcast_voices import get_pair
+                        host_voice, host_name, analyst_voice, analyst_name = get_pair(keyword_id=keyword_id)
+                    except Exception as _e:
+                        print(f"[화자 페어 조회 실패 → 기본 상현/지민 사용] {_e}")
+                        host_voice, host_name, analyst_voice, analyst_name = (None, "상현", None, "지민")
+
+                    # 대본 안의 "상현:"/"지민:"을 카테고리 화자명으로 치환
+                    if host_name != "상현" or analyst_name != "지민":
+                        script = re.sub(r"(?m)^상현:", f"{host_name}:", script)
+                        script = re.sub(r"(?m)^지민:", f"{analyst_name}:", script)
+                        print(f"[화자 치환] 상현→{host_name}, 지민→{analyst_name} ({host_voice}/{analyst_voice})")
+
                     if make_audio:
                         print("[오디오 파일 생성 중...]")
-                        
+
                         # Ensure MP3 directory exists
                         if not os.path.exists("MP3"):
                             os.makedirs("MP3")
-                            
+
                         # Create a safe filename
                         safe_title = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()[:30]
                         filename = os.path.join("MP3", f"podcast_{safe_title}_{i}.mp3")
-                        
-                        # Pass title to audio generator for announcement
-                        audio_result = run_audio_generation(script, filename, title=title)
+
+                        # Pass title + voice pair to audio generator
+                        audio_result = run_audio_generation(
+                            script, filename, title=title,
+                            voice_a=host_voice, voice_b=analyst_voice,
+                            host_name=host_name, analyst_name=analyst_name,
+                        )
                         
                         # Check if audio was successfully generated
                         if not audio_result:
@@ -287,8 +408,21 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                             
                             print("[서버로 업로드 중...]")
                             remote_path = upload_file(filename)
-                            
+
                             if remote_path:
+                                # clean 버전(오프닝 없음)도 페어로 업로드
+                                clean_remote_path = None
+                                clean_local = filename[:-4] + "_clean.mp3"
+                                if os.path.exists(clean_local):
+                                    clean_remote_override = remote_path[:-4] + "_clean.mp3"
+                                    print("[clean 버전 업로드 중...]")
+                                    clean_remote_path = upload_file(clean_local, remote_path_override=clean_remote_override)
+                                    if clean_remote_path:
+                                        if safe_remove(clean_local):
+                                            print(f"[로컬 clean 파일 삭제] {clean_local}")
+                                    else:
+                                        print("[clean 업로드 실패] intro 파일은 정상 업로드됨")
+
                                 duration_sec = _measure_mp3_duration(filename)
                                 summary = _build_summary(content)
                                 print(f"[DB 저장 중...] {title}")
@@ -297,6 +431,7 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                                     keyword_id=keyword_id,
                                     duration_sec=duration_sec,
                                     summary=summary,
+                                    clean_mp3_path=clean_remote_path,
                                 )
 
                                 if safe_remove(filename):
@@ -393,6 +528,20 @@ def clean_article_text(text):
         r'사진=.*?\n?',  # 사진 출처
         r'\(사진.*?\)',  # (사진 설명)
         r'영상=.*?\n?',  # 영상 출처
+        # ----- summary에 자주 섞여 들어오던 UI 라벨 -----
+        r'기사 본문 영역\s*',  # 기사 본문 영역
+        r'읽어주기 기능은.*?있습니다\.?',  # "읽어주기 기능은 크롬기반의 ..."
+        r'읽어주기 기능',
+        r'기사 스크랩',
+        r'글자 크기 (조절|설정).*?\n?',
+        r'클린뷰',
+        r'클린 뷰',
+        r'프린트',
+        r'자동\s*재생',
+        r'(좋아요|슬퍼요|화나요|추천해요|응원해요)\s*\d*',
+        r'댓글\s*\d*',
+        r'공유\s*\d*',
+        r'구독\s*\d*',
     ]
     for pattern in naver_noise_patterns:
         text = re.sub(pattern, '', text, flags=re.DOTALL)
@@ -415,17 +564,35 @@ def get_news_content(url):
         return ""
 
     try:
-        downloaded = trafilatura.fetch_url(url)
+        # 로테이팅 UA로 직접 다운로드 (trafilatura 기본 UA는 언론사에 자주 차단됨 → 저수율 원인)
+        downloaded = None
+        try:
+            r = requests.get(url, headers=get_random_headers(), timeout=15)
+            if r.status_code == 200 and r.text:
+                downloaded = r.text
+        except Exception as e:
+            print(f"  [경고] requests 다운로드 실패({e}) — trafilatura fetch 폴백")
+        if not downloaded:
+            downloaded = trafilatura.fetch_url(url)
         if not downloaded:
             print(f"  [실패] 페이지 다운로드 실패: {url}")
             return ""
 
+        # favor_recall=True: 경계 블록을 덜 버려 추출 성공률↑ (precision→recall)
         extracted = trafilatura.extract(
             downloaded,
             include_comments=False,
             include_tables=False,
-            favor_precision=True,
+            favor_recall=True,
         )
+        # 폴백: trafilatura 실패 시 bs4로 <p> 텍스트 수집
+        if not extracted:
+            try:
+                soup = BeautifulSoup(downloaded, "html.parser")
+                paras = [p.get_text(" ", strip=True) for p in soup.find_all("p")]
+                extracted = "\n".join(t for t in paras if len(t) > 20) or None
+            except Exception:
+                extracted = None
         if not extracted:
             print(f"  [실패] 본문 추출 실패: {url}")
             return ""
@@ -435,7 +602,7 @@ def get_news_content(url):
             print(f"  [실패] 본문 검증 실패 (너무 짧거나 한글 비율 낮음)")
             return ""
 
-        print(f"  [추출] trafilatura ({len(cleaned)}자)")
+        print(f"  [추출] ({len(cleaned)}자)")
         return cleaned
     except Exception as e:
         print(f"  [오류] 추출 중 예외: {e}")

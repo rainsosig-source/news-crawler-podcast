@@ -130,6 +130,7 @@ def init_db():
                 title_hash CHAR(64),
                 link VARCHAR(500) NOT NULL,
                 mp3_path VARCHAR(255),
+                clean_mp3_path VARCHAR(255),
                 duration_sec INT UNSIGNED,
                 summary VARCHAR(280),
                 keyword_id INT,
@@ -147,7 +148,9 @@ def init_db():
                        "add keyword_id")
             _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN title_hash CHAR(64) AFTER title",
                        "add title_hash")
-            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN duration_sec INT UNSIGNED AFTER mp3_path",
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN clean_mp3_path VARCHAR(255) AFTER mp3_path",
+                       "add clean_mp3_path")
+            _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN duration_sec INT UNSIGNED AFTER clean_mp3_path",
                        "add duration_sec")
             _try_alter(cursor, "ALTER TABLE episodes ADD COLUMN summary VARCHAR(280) AFTER duration_sec",
                        "add summary")
@@ -170,17 +173,20 @@ def init_db():
         conn.close()
 
 def insert_episode(press, title, link, mp3_path, keyword_id=None,
-                   duration_sec=None, summary=None):
+                   duration_sec=None, summary=None, clean_mp3_path=None):
     """Insert a new episode record."""
     conn = get_connection()
     try:
         with conn.cursor() as cursor:
             sql = ("INSERT INTO episodes "
-                   "(press, title, title_hash, link, mp3_path, duration_sec, summary, keyword_id) "
-                   "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)")
+                   "(press, title, title_hash, link, mp3_path, clean_mp3_path, "
+                   "duration_sec, summary, keyword_id) "
+                   "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)")
             cursor.execute(sql, (
                 press, title, compute_title_hash(title), link,
-                normalize_mp3_path(mp3_path), duration_sec, summary, keyword_id,
+                normalize_mp3_path(mp3_path),
+                normalize_mp3_path(clean_mp3_path),
+                duration_sec, summary, keyword_id,
             ))
         conn.commit()
         print(f"DB Logged: {title}")

@@ -34,6 +34,7 @@ SFTP_HOST = os.getenv("SFTP_HOST", "")
 SFTP_PORT = int(os.getenv("SFTP_PORT", "22"))
 SFTP_USER = os.getenv("SFTP_USER", "")
 SFTP_PASSWORD = os.getenv("SFTP_PASSWORD", "")
+SFTP_KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
 
 # 보관 기간 (일)
 RETENTION_DAYS = 14
@@ -130,7 +131,12 @@ def cleanup_old_podcasts(dry_run=False, limit=None, local_mode=False, days=14):
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         print(f"\n🔗 서버 연결 중: {SFTP_HOST}")
-        ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD)
+        if SFTP_KEY_FILE and os.path.exists(SFTP_KEY_FILE):
+            ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER,
+                        key_filename=SFTP_KEY_FILE,
+                        allow_agent=False, look_for_keys=False)
+        else:
+            ssh.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASSWORD)
         sftp = ssh.open_sftp()
     
     try:

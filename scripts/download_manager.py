@@ -11,10 +11,16 @@ SFTP_HOST = os.getenv("SFTP_HOST", "")
 SFTP_PORT = int(os.getenv("SFTP_PORT", "22"))
 SFTP_USER = os.getenv("SFTP_USER", "")
 SFTP_PASS = os.getenv("SFTP_PASSWORD", "")
+SFTP_KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
 
 client = paramiko.SSHClient()
 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASS)
+if SFTP_KEY_FILE and os.path.exists(SFTP_KEY_FILE):
+    client.connect(SFTP_HOST, SFTP_PORT, SFTP_USER,
+                   key_filename=SFTP_KEY_FILE,
+                   allow_agent=False, look_for_keys=False)
+else:
+    client.connect(SFTP_HOST, SFTP_PORT, SFTP_USER, SFTP_PASS)
 sftp = client.open_sftp()
 
 remote_file = "/root/flask-app/templates/manager.html"

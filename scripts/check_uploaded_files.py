@@ -13,6 +13,7 @@ HOST = os.getenv("SFTP_HOST", "")
 PORT = int(os.getenv("SFTP_PORT", "22"))
 USERNAME = os.getenv("SFTP_USER", "")
 PASSWORD = os.getenv("SFTP_PASSWORD", "")
+KEY_FILE = os.getenv("SFTP_KEY_FILE", "")
 REMOTE_DIR = "/root/flask-app/static/podcast"
 
 def check_uploaded_files():
@@ -22,7 +23,12 @@ def check_uploaded_files():
         # SSH 연결
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect(HOST, PORT, USERNAME, PASSWORD, timeout=10)
+        if KEY_FILE and os.path.exists(KEY_FILE):
+            client.connect(HOST, PORT, USERNAME,
+                           key_filename=KEY_FILE, timeout=10,
+                           allow_agent=False, look_for_keys=False)
+        else:
+            client.connect(HOST, PORT, USERNAME, PASSWORD, timeout=10)
         sftp = client.open_sftp()
         
         # 오늘 날짜 경로

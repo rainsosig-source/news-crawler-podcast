@@ -39,36 +39,45 @@ def create_remote_dir(sftp, path):
                 except Exception:
                     logger.warning(f"SFTP mkdir 실패: {current_path} - {e}")
 
-def upload_file(local_path):
-    """Uploads a file to the Flask server's static folder."""
-    
-    # 환경변수 유효성 검사
-    if not HOST or not USERNAME or not PASSWORD:
+def upload_file(local_path, remote_path_override=None):
+    """Uploads a file to the Flask server's static folder.
+
+    remote_path_override: 지정 시 자동 timestamp 규칙 무시하고 지정 경로 사용.
+                         페어 업로드(예: clean 버전)에서 파일명을 정렬할 때 사용.
+    """
+
+    # 환경변수 유효성 검사 (KEY_FILE 또는 PASSWORD 중 하나는 있어야 함)
+    if not HOST or not USERNAME or (not KEY_FILE and not PASSWORD):
         print("❌ SFTP 설정이 누락되었습니다. .env 파일을 확인하세요.")
         print(f"   HOST: {'설정됨' if HOST else '미설정'}")
         print(f"   USERNAME: {'설정됨' if USERNAME else '미설정'}")
+        print(f"   KEY_FILE: {'설정됨' if KEY_FILE else '미설정'}")
         print(f"   PASSWORD: {'설정됨' if PASSWORD else '미설정'}")
         return None
-    
-    # Generate timestamp for folder and filename
-    now = datetime.now()
-    year = now.strftime("%Y")
-    month = now.strftime("%m")
-    day = now.strftime("%d")
-    time_str = now.strftime("%H-%M-%S")
-    
-    remote_filename = f"{time_str}.mp3"
-    
-    # Add index if present
-    try:
-        idx = local_path.split("_")[-1].replace(".mp3", "")
-        if idx.isdigit():
-            remote_filename = f"{time_str}_{idx}.mp3"
-    except (AttributeError, IndexError) as e:
-        logger.debug(f"파일명 인덱스 파싱 생략: {local_path} - {e}")
 
-    remote_folder = f"{REMOTE_DIR}/{year}/{month}/{day}"
-    remote_path = f"{remote_folder}/{remote_filename}"
+    if remote_path_override:
+        remote_path = remote_path_override
+        remote_folder = os.path.dirname(remote_path)
+    else:
+        # Generate timestamp for folder and filename
+        now = datetime.now()
+        year = now.strftime("%Y")
+        month = now.strftime("%m")
+        day = now.strftime("%d")
+        time_str = now.strftime("%H-%M-%S")
+
+        remote_filename = f"{time_str}.mp3"
+
+        # Add index if present
+        try:
+            idx = local_path.split("_")[-1].replace(".mp3", "")
+            if idx.isdigit():
+                remote_filename = f"{time_str}_{idx}.mp3"
+        except (AttributeError, IndexError) as e:
+            logger.debug(f"파일명 인덱스 파싱 생략: {local_path} - {e}")
+
+        remote_folder = f"{REMOTE_DIR}/{year}/{month}/{day}"
+        remote_path = f"{remote_folder}/{remote_filename}"
 
     # 재시도: 최대 3회, 지수 백오프 (3s → 9s → 27s)
     max_attempts = 3
@@ -77,7 +86,8 @@ def upload_file(local_path):
         sftp = None
         try:
             client = paramiko.SSHClient()
-            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.load_system_host_keys()  # ~/.ssh/known_hosts 핀 (MITM 방지)
+            client.set_missing_host_key_policy(paramiko.RejectPolicy())
             # password 전용 인증으로 강제.
             # paramiko 기본값(look_for_keys/allow_agent=True)으로 두면
             # ~/.ssh 키나 agent 키를 먼저 시도하다가 서버의
