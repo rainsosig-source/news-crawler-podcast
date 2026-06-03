@@ -1,40 +1,43 @@
-# 환경 변수 파일 (민감 정보)
-.env
-
-# 카카오 토큰 파일
-kakao_token.json
-
-# Python 캐시
-__pycache__/
-*.py[cod]
-*$py.class
-
-# 가상환경
-venv/
-env/
-ENV/
-.venv/
-
-# 생성 결과물
-MP3/
-
-# 크롤러 로그
-crawler_log.txt
 
 # Google Cloud 인증 파일
-application_default_credentials.json
-
 # IDE 설정
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# 로그 파일
-*.log
-logs.json
-
 # OS 파일
+# Python 캐시
+# 가상환경
+# 로그 파일
+# 생성 결과물
+# 카카오 토큰 파일
+# 크롤러 로그
+# 환경 변수 파일 (민감 정보)
+*$py.class
+*.bak-*
+*.bak.*
+*.env
+*.json.bak*
+*.log
+*.py[cod]
+*.pyc
+*.swo
+*.swp
 .DS_Store
+.env
+.env
+.idea/
+.venv/
+.vscode/
+ENV/
+MP3/
 Thumbs.db
+__pycache__/
+__pycache__/
+application_default_credentials.json
+client_secret*.json
+crawler_log.txt
+env/
+kakao_token.json
+logs.json
 logs/
+run_*.log
+source/
+venv/
+work/

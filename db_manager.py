@@ -235,7 +235,7 @@ def get_active_keywords():
     try:
         with conn.cursor() as cursor:
             # COALESCE: topic이 NULL이면 keyword 값을 사용
-            sql = "SELECT id, keyword, COALESCE(topic, keyword) as topic, requirements FROM keywords WHERE priority > 0 ORDER BY priority DESC"
+            sql = "SELECT id, keyword, COALESCE(topic, keyword) as topic, requirements FROM keywords WHERE priority > 0 AND COALESCE(analyze_only,0)=0 ORDER BY priority DESC"
             cursor.execute(sql)
             keywords = cursor.fetchall()
     except Exception as e:
