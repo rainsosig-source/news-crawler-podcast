@@ -77,8 +77,14 @@ def check_stock(stock, state):
     tp = int(today["p"] or 0); tn = int(today["nn"] or 0)
     ys = float(rows[1]["s"] or 0) if len(rows) > 1 else None
 
+    # 첫날 가드: 어제 데이터가 없으면(종목 추가 첫날 등) 발화 안 함.
+    # 초기 수집 산물이 강한 수위로 잡혀 울리는 노이즈 방지.
+    if ys is None:
+        print(f"  {stock}: 첫날(어제 데이터 없음) — 발화 보류 (오늘 {ts:+.2f})")
+        return False
+
     reasons = []
-    if ys is not None and abs(ts - ys) >= DELTA_TH:
+    if abs(ts - ys) >= DELTA_TH:
         arrow = "개선" if ts > ys else "악화"
         reasons.append(f"전일 대비 급{arrow} ({ys:+.2f}→{ts:+.2f}, Δ{ts - ys:+.2f})")
     if ts <= -LEVEL_TH:
@@ -87,7 +93,7 @@ def check_stock(stock, state):
         reasons.append(f"강한 호재 수위 ({ts:+.2f})")
 
     if not reasons:
-        print(f"  {stock}: 조건 미충족 (오늘 {ts:+.2f}, 어제 {ys if ys is None else round(ys, 2)})")
+        print(f"  {stock}: 조건 미충족 (오늘 {ts:+.2f}, 어제 {round(ys, 2):+.2f})")
         return False
 
     if state.get(stock, {}).get("date") == td:
