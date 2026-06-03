@@ -37,7 +37,7 @@ def translate_title_ko(en):
         return ""
 
 MAX_PER_KW = 12
-FOREIGN_QUERY = {"삼성전자": "Samsung Electronics"}   # 외신(영문) 검색어 매핑
+FOREIGN_QUERY = {"삼성전자": "Samsung Electronics", "SK하이닉스": "SK Hynix"}   # 외신(영문) 검색어 매핑
 SEM_THRESHOLD = 0.92          # e5 의미 유사도 — 이 이상이면 같은 사건 중복
 NGRAM_THRESHOLD = 0.78        # 폴백(char 3-gram 코사인) 임계값
 SYS_PY = "/usr/bin/python3"
