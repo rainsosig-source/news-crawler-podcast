@@ -233,8 +233,12 @@ def cleanup_stale_mp3(mp3_dir="MP3", age_hours=24):
     if removed:
         logger.info(f"🧹 오래된 MP3 {removed}개 정리 ({age_hours}시간 이상)")
 
-def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=4):
+EDITORIAL_ALLOW = None  # 편집장(T1) 선별 결과 link→brief. None이면 게이팅 없이 전체 통과(폴백).
+
+
+def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, make_audio=True, max_articles=4, collect_only=False):
     # Encode the query for the URL
+    candidates = []  # collect_only 모드: 본문/생성 없이 후보 헤드라인만 수집(항상 정의)
     encoded_query = urllib.parse.quote(query)
     
     # Base URL provided by the user
@@ -325,8 +329,16 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                 print(f"언론사: {press}")
                 print(f"제목: {title}")
                 print(f"링크: {link}")
-                
-                
+
+                # ── 편집장(T1): 후보 수집 / 선별 게이트 ──
+                if collect_only:
+                    candidates.append({"title": title, "link": link, "press": press, "keyword": query})
+                    continue
+                if EDITORIAL_ALLOW is not None and link not in EDITORIAL_ALLOW:
+                    print("[편집장 제외] 미선택 → 건너뜀")
+                    stats['failed'] += 1
+                    continue
+
                 content = ""
                 if link:
                     # Rate limiting: Random delay to avoid IP blocking
@@ -344,7 +356,11 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
                         print("-" * 50)
                         continue
                     print("\n[AI 팟캐스트 대본 생성 중...]")
-                    script = generate_podcast_script(title, content, requirements=requirements)
+                    _req = requirements
+                    if EDITORIAL_ALLOW and link in EDITORIAL_ALLOW and EDITORIAL_ALLOW[link].get("angle"):
+                        _req = (requirements or "") + "\n[편집 앵글] " + EDITORIAL_ALLOW[link]["angle"]
+                        print(f"[편집 앵글] {EDITORIAL_ALLOW[link]['angle']}")
+                    script = generate_podcast_script(title, content, requirements=_req)
                     print(f"--- 팟캐스트 대본 ---\n{script[:200]}...\n---------------------")
 
                     # 카테고리별 음성/화자 페어 결정 (인공지능=재현·소은, 경제=상현·지민 등)
@@ -458,7 +474,7 @@ def crawl_naver_news(query, keyword_id=None, requirements=None, use_ai=True, mak
     
     # Print statistics
     print(f"\n📊 크롤링 통계 - 총: {stats['total']}, 성공: {stats['success']}, 중복: {stats['duplicate']}, 실패: {stats['failed']}\n")
-    return stats
+    return candidates if collect_only else stats
 
 def validate_content(content):
     """Validate article content quality."""
@@ -610,6 +626,7 @@ def get_news_content(url):
 
 
 def run_crawling_job():
+    global EDITORIAL_ALLOW
     # 이전 실행에서 업로드 실패로 남은 오래된 MP3 정리
     cleanup_stale_mp3(mp3_dir="MP3", age_hours=24)
 
@@ -620,6 +637,28 @@ def run_crawling_job():
         crawl_naver_news("인공지능", use_ai=True, make_audio=True)
         return
 
+    # ── Phase A: 전 키워드 헤드라인 후보 수집 (본문/생성 없음) ──
+    EDITORIAL_ALLOW = None
+    all_cands = []
+    for k in keywords:
+        res = crawl_naver_news(query=k['keyword'], keyword_id=k['id'], collect_only=True)
+        if isinstance(res, list):
+            all_cands.extend(res)
+
+    # ── Phase B: 편집장 에이전트(로컬 Gemma) — 클러스터·중요도·중복통합·앵글 ──
+    if all_cands:
+        try:
+            import editor_desk
+            EDITORIAL_ALLOW = editor_desk.build_brief(all_cands)
+            if EDITORIAL_ALLOW:
+                print(f"[편집장] 후보 {len(all_cands)}건 → 선택 {len(EDITORIAL_ALLOW)}건")
+            else:
+                print(f"[편집장] 선별 없음 → 전체 통과(폴백), 후보 {len(all_cands)}건")
+        except Exception as e:
+            EDITORIAL_ALLOW = None
+            print(f"[편집장 실패 → 폴백] {e}")
+
+    # ── Phase C: 선별된 기사만 본문 추출·생성 (기존 동작, EDITORIAL_ALLOW로 게이팅) ──
     for k in keywords:
         print(f"\n>>> 검색어 '{k['keyword']}' (우선순위: {k.get('priority', 0)}) 크롤링 시작...")
         crawl_naver_news(
